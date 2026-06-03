@@ -1,0 +1,20 @@
+{
+  "cache_version": 1,
+  "dataset_name": "SPY_minutes",
+  "parquet_file": "SPY_minutes.parquet",
+  "schema_columns": [
+    "symbol",
+    "ts",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume"
+  ],
+  "date_column": "ts",
+  "row_count": 454835,
+  "min_date": "2022-10-03",
+  "max_date": "2024-12-30",
+  "request_start_date": "2022-10-01",
+  "request_end_date": "2024-12-31"
+}

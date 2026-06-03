@@ -1,0 +1,25 @@
+{
+  "cache_version": 1,
+  "dataset_name": "SPY_options",
+  "parquet_file": "SPY_options.parquet",
+  "schema_columns": [
+    "symbol",
+    "trade_date",
+    "strike_price",
+    "expiry_date",
+    "option_type",
+    "bid",
+    "ask",
+    "bid_iv",
+    "ask_iv",
+    "delta",
+    "open_interest",
+    "volume"
+  ],
+  "date_column": "trade_date",
+  "row_count": 4812910,
+  "min_date": "2022-10-03",
+  "max_date": "2024-12-31",
+  "request_start_date": "2022-10-01",
+  "request_end_date": "2024-12-31"
+}

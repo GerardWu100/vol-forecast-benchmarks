@@ -1,0 +1,52 @@
+# Data: ignore all by default, then allow required input caches
+data/*
+!data/raw/
+data/raw/*
+!data/raw/SPY_minutes.parquet
+!data/raw/SPY_minutes.parquet.metadata.json
+!data/raw/SPY_options.parquet
+!data/raw/SPY_options.parquet/*.parquet
+!data/raw/SPY_options.parquet.metadata.json
+!data/raw/VIX_daily.parquet
+!data/raw/VIX_daily.parquet.metadata.json
+!data/processed/
+data/processed/*
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Environment
+.env
+
+# Notebooks
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# Local secrets, credentials, and machine-specific state.
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.csr
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+credentials.json
+client_secret*.json
+secrets.json
+secrets.toml
+*.token
+*.secret
+.netrc
+*.log

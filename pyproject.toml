@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vol-forecast-benchmarks"
+version = "0.1.0"
+description = "Minute-to-daily volatility forecasting benchmarks"
+requires-python = ">=3.11"
+dependencies = [
+    "arch>=7.0",
+    "clickhouse-connect>=0.7",
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "python-dotenv>=1.2.2",
+    "scikit-learn>=1.4",
+    "scipy>=1.12",
+    "statsmodels>=0.14",
+    "xgboost>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.3"]
+notebook = ["jupyter>=1.0", "nbconvert>=7.0"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["volcast*"]

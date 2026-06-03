@@ -1,0 +1,54 @@
+# Global pipeline configuration for volatility benchmark experiments.
+[data]
+# Primary benchmark symbols.
+symbols = ["SPY"]
+# Optional robustness-check symbols. Keep empty for the portable default run.
+robustness_symbols = []
+# Inclusive benchmark date range.
+start_date = "2022-10-01"
+end_date = "2024-12-31"
+
+[cache]
+# Raw input cache directory used by stage 1-3.
+raw_cache_dir = "data/raw"
+# Metadata sidecar suffix appended to each parquet filename.
+# metadata_suffix = ".metadata.json"
+# metadata_suffix = ".meta.json"
+metadata_suffix = ".metadata.json"
+# Cache contract version. Bump this when sidecar schema changes.
+version = 1
+# Max rows per options parquet shard file (<100MB GitHub-safe target).
+options_shard_rows = 2500000
+
+[rv]
+# Implemented realised variance estimators.
+estimators = ["close_to_close", "parkinson", "garman_klass"]
+# Primary realised variance target estimator.
+target_estimator = "close_to_close"
+# HAR lag windows in trading days.
+har_lags = [1, 5, 22]
+# Minimum minute bars per day to keep the row.
+min_minutes_per_day = 300
+
+[options]
+# Call delta used for ATM IV selection.
+atm_delta = 0.50
+# Absolute delta used for skew features (+call/-put).
+skew_delta = 0.25
+# Minimum and maximum days-to-expiry for chain filtering.
+min_dte = 7
+max_dte = 45
+# Maximum forward-fill window for option-derived features.
+max_ffill_days = 3
+
+[forecast]
+# Forecast horizons in trading days.
+horizons = [1, 5]
+# Initial expanding-window train period.
+initial_train_years = 5
+# Retraining frequency in trading days.
+retrain_every_days = 21
+
+[models]
+# Enabled model keys from MODEL_REGISTRY.
+enabled = ["har", "garch", "ridge", "lasso", "xgboost"]

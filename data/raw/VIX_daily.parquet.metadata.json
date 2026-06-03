@@ -1,0 +1,15 @@
+{
+  "cache_version": 1,
+  "dataset_name": "VIX_daily",
+  "parquet_file": "VIX_daily.parquet",
+  "schema_columns": [
+    "date",
+    "vix"
+  ],
+  "date_column": "date",
+  "row_count": 564,
+  "min_date": "2022-10-03",
+  "max_date": "2024-12-30",
+  "request_start_date": "2022-10-01",
+  "request_end_date": "2024-12-31"
+}
