@@ -1,69 +1,124 @@
-# Adaptive outline: volatility forecasting when the benchmark cannot start
+# Outline proposal
 
-## Archetype decision
+## Project scan summary
 
-- Problem: compare realised-variance forecasts while preserving information timing and chronological evaluation.
-- Options considered: `strategy-backtest`, `risk-model`, and `mixed`.
-- Choice: `mixed`, combining the risk-model and empirical benchmark blueprints.
-- Why: the repository defines variance estimators and losses, but its main analytical task is an out-of-sample comparison of forecasting models rather than a trading strategy.
-- Verify: the draft must connect every claimed result to the unchanged default run or to the explicitly labelled one-year sensitivity run.
+- Project archetype candidate: mixed risk-model and empirical benchmark.
+- Supporting evidence from files: `rv_estimators.py` defines variance estimators;
+  `build_features.py` enforces feature timing; `har.py`, `garch.py`, `linear.py`,
+  and `xgboost_model.py` implement five forecasters; `train_evaluate.py` runs an
+  expanding-window comparison with QLIKE, MSE, diagnostics, and Diebold-Mariano
+  tests.
+- Reproduced defect: the former five-calendar-year burn-in extended beyond the
+  2022-11-02 to 2024-12-20 feature history and silently wrote empty outputs.
+- Resolution: the portable default now uses one calendar year, which yields 286
+  forecast origins per model and horizon. Infeasible windows raise a dated error.
 
-## Section blueprint
+## Blueprint selection
 
-1. **A benchmark can fail before a model does**
-   - State the forecasting question and the default-run finding: 537 usable rows, zero out-of-sample forecasts.
-2. **What is being forecast**
-   - Define intraday close-to-close realised variance and the one-day/five-day targets.
-   - Explain daily, weekly, and monthly Heterogeneous Autoregressive Realised Variance (HAR-RV) features.
-3. **Information timing is part of the model**
-   - Trace the one-business-day lag on option and VIX features.
-   - Describe the expanding-window walk-forward schedule.
-4. **Why the default leaderboard is empty**
-   - Compare the 537-row feature span with the configured five-calendar-year initial training period.
-   - Include a coverage/burn-in graph and explain why an empty score table is correct behavior.
-5. **A one-year sensitivity run**
-   - Change only `initial_train_years` in a copied in-memory configuration.
-   - Compare HAR-RV, GARCH(1,1), Ridge, Lasso, and XGBoost using QLIKE.
-   - Include a model-comparison graph and numerical table from frozen derived data.
-6. **What the losses do and do not say**
-   - Interpret QLIKE differences, floor-hit diagnostics, and Diebold-Mariano comparisons.
-   - Avoid presenting the sensitivity run as the repository's configured result.
-7. **What I would change before treating this as research evidence**
-   - Reconcile data history and burn-in, widen the asset/time sample, test retraining choices, and examine stability across volatility regimes.
+- Selected blueprint: mixed.
+- Why this blueprint fits this project: the article must explain realised
+  variance and conditional-variance models, then assess them through a strict
+  chronological benchmark rather than a trading backtest.
+- Planned section order:
+  1. The clock is part of the benchmark.
+  2. From minute returns to forecast targets.
+  3. Feature availability and no-lookahead alignment.
+  4. Five model families and their equations.
+  5. The repaired expanding-window protocol.
+  6. QLIKE, MSE, and Diebold-Mariano definitions.
+  7. Corrected default results and forecast-path evidence.
+  8. Limits, interpretation, and primary references.
 
 ## Planned equations
 
-1. Intraday log return: $r_{t,i}=\log(P_{t,i}/P_{t,i-1})$, where $P_{t,i}$ is minute $i$'s closing price on day $t$.
-2. Daily realised variance: $RV_t=\sum_{i=1}^{M_t}r_{t,i}^2$, where $M_t$ is the number of intraday returns.
-3. Five-day target: $y_{t,5}=\frac{1}{5}\sum_{j=1}^{5}RV_{t+j}$; the one-day target is $y_{t,1}=RV_{t+1}$.
-4. HAR-RV regression: $\widehat y_{t,h}=\beta_0+\beta_d RV_t^{(d)}+\beta_w RV_t^{(w)}+\beta_m RV_t^{(m)}$, with all terms defined before use.
-5. QLIKE per observation: $L_t=\log(\widehat y_t)+y_t/\widehat y_t$, where lower average loss is better for the same target series.
-6. Diebold-Mariano loss difference: $d_t=L_{a,t}-L_{b,t}$, with a positive mean indicating higher loss for model $a$.
+1. Intraday log return and realised variance.
+   - Purpose: derive the daily forecast target from minute closes.
+   - Symbols: minute price $P_{t,i}$, return $r_{t,i}$, count $M_t$, realised
+     variance $RV_t$.
+   - Delimiter: display.
+2. One-day and five-day targets.
+   - Purpose: show exactly which future observations each feature row predicts.
+   - Symbols: feature date $t$, horizon $h$, target $y_{t,h}$.
+   - Delimiter: display.
+3. HAR-RV daily, weekly, and monthly regressors.
+   - Purpose: explain multi-horizon volatility persistence.
+   - Symbols: lagged averages $x_{d,t}$, $x_{w,t}$, $x_{m,t}$ and coefficients
+     $\beta$.
+   - Delimiter: display.
+4. GARCH(1,1) return and conditional-variance recursion.
+   - Purpose: contrast a return-driven variance model with HAR-RV.
+   - Symbols: return $r_t$, shock $\varepsilon_t$, conditional standard deviation
+     $\sigma_t$, and parameters $\omega$, $\alpha$, $\beta$.
+   - Delimiter: display.
+5. Ridge and Lasso objectives in log-variance space.
+   - Purpose: explain positivity and the difference between L2 and L1 penalties.
+   - Symbols: log target $z_t$, feature vector $\mathbf{x}_t$, coefficients
+     $\boldsymbol\theta$, penalty $\lambda$.
+   - Delimiter: display.
+6. Additive tree ensemble.
+   - Purpose: state the XGBoost prediction structure without pretending trees
+     supply a closed-form volatility model.
+   - Symbols: trees $f_m$, learning rate $\eta$, prediction $F_M$.
+   - Delimiter: display.
+7. MSE and QLIKE.
+   - Purpose: derive the two rankings and explain why they disagree.
+   - Symbols: realised variance $y_t$, forecast $\widehat y_t$, sample size $n$.
+   - Delimiter: display.
+8. Diebold-Mariano loss differential.
+   - Purpose: interpret the pairwise test direction and caveats.
+   - Symbols: model losses $L_{a,t}$ and $L_{b,t}$, difference $d_t$.
+   - Delimiter: display.
 
 ## Planned code excerpts
 
-- The shifted rolling-window construction in `add_har_lags` to show that rolling summaries exclude day $t$.
-- The business-day shift used for option-chain and VIX alignment.
-- A short sensitivity-run block showing that the configuration is copied before setting the one-year burn-in.
+1. File: `src/volcast/features/rv_estimators.py`.
+   - Function/block: shifted HAR rolling mean.
+   - Why include this excerpt: proves the feature at date $t$ excludes $RV_t$.
+2. File: `src/volcast/models/garch.py`.
+   - Function/block: variance recursion.
+   - Why include this excerpt: connects the GARCH equation to implementation.
+3. File: `src/volcast/models/linear.py`.
+   - Function/block: inverse log-target transform.
+   - Why include this excerpt: explains positive forecasts without routine floor
+     clipping.
+4. File: `src/volcast/evaluation/train_evaluate.py`.
+   - Function/block: infeasible-window exception.
+   - Why include this excerpt: documents the corrected evidence contract.
 
-## Planned graphs
+## Planned technical graphs
 
-1. `images/01_realised_volatility.png`: annualised SPY realised volatility and its 22-day trailing mean. Takeaway: volatility is clustered, so chronological evaluation and regime coverage matter.
-2. `images/02_qlike_vs_har.png`: QLIKE difference from HAR-RV for each model and horizon in the one-year sensitivity run. Takeaway: compare relative loss within a horizon, not raw MSE magnitudes across horizons.
-3. `images/cover.png`: a generated editorial cover depicting layered volatility horizons, forecast paths, and an honest chronological boundary without text or logos.
+1. Graph type: realised-volatility time series and 22-day mean.
+   - Source: generated from default stage-2 output.
+   - Expected takeaway: volatility clustering makes chronological evaluation
+     necessary.
+2. Graph type: QLIKE difference from HAR-RV by model and horizon.
+   - Source: generated from corrected default stage-4 scores.
+   - Expected takeaway: Lasso and Ridge improve QLIKE while HAR-RV wins MSE.
+3. Graph type: realised versus forecast one-day annualised volatility.
+   - Source: generated from corrected default forecasts.
+   - Expected takeaway: both HAR-RV and Lasso smooth short realised spikes, which
+     aggregate rankings alone do not show.
 
-## Known gaps and assumptions
+## Risks, gaps, and assumptions
 
-- The default stage-4 outputs are empty because the data cover about two years while the initial window is five years.
-- The one-year run is diagnostic sensitivity analysis, not the configured benchmark.
-- The packaged sample covers SPY only, with VIX as market context.
-- No transaction-cost or trading-performance claim is appropriate because this is a forecast benchmark, not a strategy backtest.
-- The option data and underlying raw cache are accepted as supplied; the post does not independently validate vendor construction.
-
-## Deployment note
-
-The canonical workspace is `vol-forecast-benchmarks/blog/`. The ordinary publish bundle would be `~/projects/website/content/post/volatility-forecast-benchmarks/`, containing only the two Markdown files and referenced images. The user explicitly deferred publication, so this task will not create that bundle, run Hugo, commit website files, or push the website repository.
+- Data gaps: one asset, roughly two years, and no independent audit of the
+  packaged market-data source.
+- Assumptions: 252 trading days per year; option and VIX observations are usable
+  one business day later; bounded three-day forward-fill remains economically
+  meaningful.
+- Statistical cautions: overlapping five-day targets create serial dependence;
+  pairwise tests are numerous and unadjusted; the one-year burn-in is a portable
+  design choice rather than an estimated optimum.
+- Validation checks: full tests and Ruff, default pipeline, explicit five-year
+  failure reproduction, chart regeneration, both blog validators, frontmatter
+  and image checks, bilingual protected-block comparison, and primary-reference
+  link verification.
+- Deployment: canonical files stay in `vol-forecast-benchmarks/blog/`. The user
+  explicitly prohibited website changes, Hugo publication, and website commits.
 
 ## Outline review
 
-The outline was checked against the four coverage requirements: context, methodology, evidence, and practical limitations are all present. The central finding is not buried beneath the sensitivity analysis. Equations are limited to quantities implemented in the repository, and both planned charts can be regenerated from checked-in raw data with a blog-local script.
+The revised structure gives the corrected default evidence precedence over the
+historical defect. It covers context, methodology, evidence, and limitations.
+Every planned equation maps to executable code or a cited primary paper, and the
+three graphs answer different questions rather than repeating the score table.

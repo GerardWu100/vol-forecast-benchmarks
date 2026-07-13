@@ -14,6 +14,11 @@ Stage order:
 3. build leakage-aware features,
 4. run walk-forward evaluation.
 
+The default stage-4 schedule uses one calendar year for initial training and
+refits every 21 trading days. If the configured initial span exceeds the
+available features, the evaluator raises before the orchestrator reports a
+successful pipeline run.
+
 # Part 2: Code Reference
 
 - `src/volcast/pipeline/run_pipeline.py`
@@ -28,3 +33,5 @@ Where to start in code:
 
 - 2026-04-19: Replaced the five-stage orchestrator with a four-stage offline
   pipeline entrypoint under `src/volcast/pipeline/`.
+- 2026-07-13: The pipeline now surfaces infeasible training-history settings as
+  errors rather than completing with empty stage-4 artifacts.

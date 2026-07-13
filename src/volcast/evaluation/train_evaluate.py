@@ -7,6 +7,7 @@ horizon, then computes summary scores and pairwise Diebold-Mariano tests.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -58,8 +59,26 @@ DIAGNOSTICS_COLUMNS = [
 ]
 
 
+class InsufficientTrainingHistoryError(ValueError):
+    """Signal that a requested initial window leaves no out-of-sample rows."""
+
+
 def _initial_train_end_index(dates: pd.Series, initial_train_years: int) -> int:
-    """Find the first evaluation index after the initial training calendar span."""
+    """Find the first evaluation index after the initial training calendar span.
+
+    Parameters
+    ----------
+    dates : pd.Series
+        Chronologically sorted feature dates.
+    initial_train_years : int
+        Calendar years reserved for the initial expanding training window.
+
+    Returns
+    -------
+    int
+        Positional index of the first out-of-sample row, or ``len(dates)`` when
+        the requested calendar span extends beyond the available history.
+    """
     first_date = pd.Timestamp(dates.iloc[0])
     cutoff_date = first_date + pd.DateOffset(years=initial_train_years)
     matching_indices = dates[dates >= cutoff_date].index
@@ -75,17 +94,38 @@ def _fit_and_predict(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
     target_col: str,
+    horizon: int,
 ) -> tuple[np.ndarray, str]:
-    """Fit one registered model and return forecasts plus the model display name."""
-    model = MODEL_REGISTRY[model_key]()
+    """Fit one registered model and return forecasts plus its display name.
+
+    Parameters
+    ----------
+    model_key : str
+        Registry key for the requested model family.
+    train_df : pd.DataFrame
+        Expanding in-sample feature and target rows.
+    test_df : pd.DataFrame
+        Next chronological forecast block.
+    target_col : str
+        Variance target column matching ``horizon``.
+    horizon : int
+        Forecast horizon in trading days.
+
+    Returns
+    -------
+    tuple[np.ndarray, str]
+        Forecast vector and human-readable model name.
+    """
     y_train = train_df[target_col]
 
     # GARCH consumes return history in addition to the shared feature matrix.
     if model_key == "garch":
+        model = GARCHModel(forecast_horizon=horizon)
         garch_columns = FEATURE_COLS + ["daily_returns"]
         model.fit(train_df[garch_columns], y_train)
         return model.predict(test_df[garch_columns]), model.name
 
+    model = MODEL_REGISTRY[model_key]()
     model.fit(train_df[FEATURE_COLS], y_train)
     return model.predict(test_df[FEATURE_COLS]), model.name
 
@@ -112,9 +152,35 @@ def _forecast_chunk(
 
 
 def walk_forward_evaluate(
-    features_df: pd.DataFrame, symbol: str, horizon: int, config: dict
+    features_df: pd.DataFrame, symbol: str, horizon: int, config: dict[str, Any]
 ) -> pd.DataFrame:
-    """Run expanding-window walk-forward forecast generation for one symbol/horizon."""
+    """Run expanding-window walk-forward forecasts for one symbol and horizon.
+
+    Parameters
+    ----------
+    features_df : pd.DataFrame
+        Chronological model matrix with a ``date`` column, model features, and
+        the target column for ``horizon``.
+    symbol : str
+        Asset identifier written to forecast rows and error messages.
+    horizon : int
+        Forecast horizon in trading days.
+    config : dict[str, Any]
+        Parsed project configuration containing forecast and model settings.
+
+    Returns
+    -------
+    pd.DataFrame
+        Long-form out-of-sample forecasts by date and model.
+
+    Raises
+    ------
+    InsufficientTrainingHistoryError
+        If the requested initial calendar window or minimum observation count
+        leaves no out-of-sample row.
+    ValueError
+        If the feature frame is empty or a forecast setting is invalid.
+    """
     working_df = features_df.sort_values("date").reset_index(drop=True)
     target_col = f"rv_{horizon}d_ahead"
 
@@ -122,11 +188,30 @@ def walk_forward_evaluate(
     retrain_every_days = config["forecast"]["retrain_every_days"]
     enabled_models = config["models"]["enabled"]
 
+    if working_df.empty:
+        raise ValueError(f"{symbol} horizon={horizon}: feature frame is empty")
+    if initial_train_years < 0:
+        raise ValueError("forecast.initial_train_years must be non-negative")
+    if retrain_every_days <= 0:
+        raise ValueError("forecast.retrain_every_days must be positive")
+    if target_col not in working_df.columns:
+        raise ValueError(f"Missing target column: {target_col}")
+
     # First out-of-sample date must leave enough history for model fitting.
     train_end_idx = _initial_train_end_index(working_df["date"], initial_train_years)
     train_end_idx = max(train_end_idx, MIN_TRAIN_OBS)
     if train_end_idx >= len(working_df):
-        return pd.DataFrame(columns=FORECAST_COLUMNS)
+        first_date = pd.Timestamp(working_df["date"].iloc[0])
+        last_date = pd.Timestamp(working_df["date"].iloc[-1])
+        required_cutoff = first_date + pd.DateOffset(years=initial_train_years)
+        raise InsufficientTrainingHistoryError(
+            f"{symbol} horizon={horizon}: initial training window is infeasible. "
+            f"The {len(working_df)} feature rows span {first_date.date()} to "
+            f"{last_date.date()}, while initial_train_years={initial_train_years} "
+            f"requires a first evaluation date on or after {required_cutoff.date()} "
+            f"and at least {MIN_TRAIN_OBS} training rows. Extend the data history or "
+            "shorten forecast.initial_train_years."
+        )
 
     retrain_points = list(range(train_end_idx, len(working_df), retrain_every_days))
     forecast_chunks: list[pd.DataFrame] = []
@@ -147,7 +232,7 @@ def walk_forward_evaluate(
         for model_key in enabled_models:
             try:
                 predictions, model_name = _fit_and_predict(
-                    model_key, train_df, test_df, target_col
+                    model_key, train_df, test_df, target_col, horizon
                 )
             except Exception as error:
                 LOGGER.warning(

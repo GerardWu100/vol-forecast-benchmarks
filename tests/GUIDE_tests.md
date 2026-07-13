@@ -29,7 +29,8 @@ tests.
   QLIKE, MSE, and Diebold-Mariano behavior checks.
 
 - `test_models.py`
-  Interface and behavior checks for HAR, GARCH, Ridge, Lasso, and XGBoost.
+  Interface and behavior checks for HAR, horizon-aware GARCH, Ridge, Lasso, and
+  XGBoost.
 
 - `test_fetch_data_cache.py`
   Stage-1 cache contract tests for cache hit, cache miss, metadata invalidation,
@@ -39,7 +40,8 @@ tests.
   Artifact-based checks for feature and target temporal alignment.
 
 - `test_train_evaluate.py`
-  Diagnostics checks and toy stage-2-to-4 offline smoke path.
+  Diagnostics, portable default-window contract, fail-fast behavior for
+  infeasible burn-ins, and the toy stage-2-to-4 offline smoke path.
 
 Where to start in code:
 
@@ -51,3 +53,5 @@ Where to start in code:
 
 - 2026-04-19: Updated smoke coverage from stage-2-to-5 to stage-2-to-4 after
   removing the HTML report stage from the official pipeline.
+- 2026-07-13: Added regression coverage for the former five-year-versus-two-year
+  mismatch so silent empty benchmark outputs cannot return.

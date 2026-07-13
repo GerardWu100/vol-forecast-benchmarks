@@ -57,6 +57,9 @@ vol-forecast-benchmarks/
 │   └── offline_pipeline_demo.ipynb
 ├── docs/
 │   └── reference/
+│       ├── evaluation_protocol.md
+│       ├── offline_workflow.md
+│       └── ...
 └── outputs/
 ```
 
@@ -95,9 +98,9 @@ flowchart LR
 
 ### Target Definition
 
-The forecast target is realised variance, not volatility level. For the 1-day
-horizon, target is $\sigma^2_{t+1}$. For the 5-day horizon, target is the mean of
-the next five realised-variance observations.
+Let $RV_t$ denote realised variance on feature date $t$. The forecast target is
+variance, not volatility. The 1-day target is $RV_{t+1}$, and the 5-day target is
+$\frac{1}{5}\sum_{j=1}^{5}RV_{t+j}$.
 
 ### Feature Families
 
@@ -112,6 +115,11 @@ The model matrix combines:
 The benchmark uses expanding-window walk-forward training with periodic
 retraining. Feature timing is explicitly lagged so date-$t$ predictors do not use
 information from date $t$ close or later.
+
+The portable cache supports one calendar year of initial training followed by
+286 out-of-sample dates. Models are refitted every 21 trading days. A longer
+configured burn-in must be paired with longer data; stage 4 raises a dated error
+when the requested first evaluation date is unavailable.
 
 ### Diagnostics
 
@@ -131,3 +139,5 @@ access. The notebook and stage-2-to-4 pipeline do not require database access.
 - Robustness symbols are documented as an extension path, not required default.
 - Model family is intentionally compact to keep benchmark interpretation clear.
 - Project optimizes for reproducible research quality over deployment features.
+- The one-year initial window is a portable-sample design choice, not evidence
+  that one year is universally optimal for volatility forecasting.

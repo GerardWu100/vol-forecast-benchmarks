@@ -1,0 +1,2 @@
+symbol,rv_rows,feature_rows,feature_start,feature_end,initial_train_years,retrain_every_days,first_forecast_date,last_forecast_date,forecast_rows,score_rows
+SPY,564,537,2022-11-02,2024-12-20,1,21,2023-11-02,2024-12-20,2860,10

@@ -32,11 +32,29 @@ class GARCHModel(ForecastModel):
 
     name = "GARCH(1,1)"
 
-    def __init__(self) -> None:
+    def __init__(self, forecast_horizon: int = 1) -> None:
+        """Initialize a horizon-aware GARCH(1,1) forecaster.
+
+        Parameters
+        ----------
+        forecast_horizon : int, default=1
+            Number of trading-day conditional variances to average for each
+            forecast, matching the project's average-variance target.
+
+        Raises
+        ------
+        ValueError
+            If ``forecast_horizon`` is not positive.
+        """
+        if forecast_horizon <= 0:
+            raise ValueError("forecast_horizon must be positive")
+
+        self._forecast_horizon = forecast_horizon
         self._omega = 0.0
         self._alpha = 0.0
         self._beta = 0.0
         self._in_sample_variance: np.ndarray | None = None
+        self._last_conditional_variance: float | None = None
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
         """Fit GARCH parameters using the ``daily_returns`` series from X."""
@@ -55,35 +73,50 @@ class GARCHModel(ForecastModel):
         # arch reports percent-scaled volatility; convert back to decimal variance.
         conditional_volatility = _as_float_array(result.conditional_volatility)
         self._in_sample_variance = (conditional_volatility**2) / PERCENT_SQUARED_TO_DECIMAL
+        self._last_conditional_variance = float(self._in_sample_variance[-1])
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Predict conditional variances for rows in X."""
         row_count = len(X)
-
-        if self._in_sample_variance is not None and row_count == len(self._in_sample_variance):
-            return np.maximum(self._in_sample_variance.copy(), MIN_POSITIVE_VARIANCE)
-
         returns = X["daily_returns"].to_numpy(dtype=float)
-        variance_path = np.zeros(row_count, dtype=float)
+        average_variance_forecasts = np.zeros(row_count, dtype=float)
 
         omega_decimal = self._omega / PERCENT_SQUARED_TO_DECIMAL
         persistence = self._alpha + self._beta
 
         if row_count == 0:
-            return variance_path
+            return average_variance_forecasts
 
-        # Seed the variance path from the unconditional variance when stationary.
-        if persistence < 1.0:
-            variance_path[0] = omega_decimal / (1.0 - persistence)
+        # The last fitted conditional variance carries the state into the first
+        # out-of-sample date. Fall back to the unconditional variance only when
+        # predict() is called before a fitted state is available.
+        if self._last_conditional_variance is not None:
+            previous_variance = self._last_conditional_variance
+        elif persistence < 1.0:
+            previous_variance = omega_decimal / (1.0 - persistence)
         else:
-            variance_path[0] = omega_decimal + self._alpha * (returns[0] ** 2)
+            previous_variance = omega_decimal
 
-        # Roll the GARCH(1,1) recursion forward one day at a time.
-        for idx in range(1, row_count):
-            prev_return_sq = returns[idx - 1] ** 2
-            prev_variance = variance_path[idx - 1]
-            variance_path[idx] = (
-                omega_decimal + self._alpha * prev_return_sq + self._beta * prev_variance
+        for row_index, observed_return in enumerate(returns):
+            # At feature date t, return r_t is observed. It updates the one-step
+            # conditional variance forecast for target day t+1.
+            one_step_variance = (
+                omega_decimal
+                + self._alpha * observed_return**2
+                + self._beta * previous_variance
             )
 
-        return np.maximum(variance_path, MIN_POSITIVE_VARIANCE)
+            # For k>1, E_t[r_{t+k-1}^2] equals its conditional variance, so the
+            # expected variance recursion uses persistence = alpha + beta.
+            horizon_variance = one_step_variance
+            variance_sum = one_step_variance
+            for _ in range(1, self._forecast_horizon):
+                horizon_variance = omega_decimal + persistence * horizon_variance
+                variance_sum += horizon_variance
+
+            average_variance_forecasts[row_index] = (
+                variance_sum / self._forecast_horizon
+            )
+            previous_variance = one_step_variance
+
+        return np.maximum(average_variance_forecasts, MIN_POSITIVE_VARIANCE)

@@ -44,8 +44,9 @@ max_ffill_days = 3
 [forecast]
 # Forecast horizons in trading days.
 horizons = [1, 5]
-# Initial expanding-window train period.
-initial_train_years = 5
+# Initial expanding-window train period. The portable cache supports 1 year.
+# Longer research windows require a correspondingly longer raw-data history.
+initial_train_years = 1
 # Retraining frequency in trading days.
 retrain_every_days = 21
 

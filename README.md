@@ -14,11 +14,17 @@ offline and starts from versioned parquet in `data/raw`.
 
 - **Academic baselines first**: HAR-RV (Heterogeneous Autoregressive Realised
   Volatility) and GARCH(1,1) (Generalized Autoregressive Conditional
-  Heteroskedasticity) are included as reference models.
+  Heteroskedasticity) are included as reference models. GARCH averages its
+  expected conditional variances over the configured target horizon.
 - **Leakage-aware timing**: stage 3 lags options and VIX so date $t$ features use
   information available by $t-1$.
 - **Walk-forward evaluation**: stage 4 uses an expanding training window with
   periodic retraining, not random shuffles.
+- **Executable portable default**: the checked-in two-year sample uses a
+  one-calendar-year initial training window, leaving 286 out-of-sample dates.
+- **Fail-fast window checks**: an initial window that extends beyond the feature
+  history raises an error with the available dates instead of writing empty
+  benchmark tables.
 - **Variance-native scoring**: QLIKE (Quasi-Likelihood loss) is the primary
   metric.
 - **Offline reproducibility**: the checked-in cache is validated through sidecar
@@ -33,6 +39,8 @@ offline and starts from versioned parquet in `data/raw`.
 - **Date range**: `2022-10-01` to `2024-12-31`
 - **Forecast horizons**: 1 trading day and 5 trading days
 - **Forecast target**: close-to-close realised variance
+- **Initial training period**: 1 calendar year
+- **Retraining cadence**: every 21 trading days
 
 ## Four-Stage Pipeline
 
@@ -60,8 +68,14 @@ uv run python -m volcast.pipeline.run_pipeline
 Run tests:
 
 ```bash
-uv run python -m pytest -q
+uv run --extra dev pytest -q
 ```
+
+The portable one-year initial window is chosen before model comparison so the
+checked-in cache can execute the documented benchmark. A longer research window
+is valid only after extending the raw-data history. If
+`forecast.initial_train_years` leaves no out-of-sample row, stage 4 stops with an
+`InsufficientTrainingHistoryError` rather than creating empty score files.
 
 ## Stage Commands (Manual)
 
@@ -108,6 +122,11 @@ It demonstrates the full offline flow from `data/raw` through stage 4 outputs.
 - `outputs/scores.parquet`: aggregate score table by symbol, horizon, and model.
 - `outputs/dm_tests.parquet`: pairwise Diebold-Mariano results.
 - `outputs/model_diagnostics.parquet`: floor-hit rates and tail-risk diagnostics.
+
+For the checked-in sample, the default run creates 286 forecast dates per model
+at each horizon. QLIKE and MSE can rank models differently because they penalise
+forecast errors differently; neither score should be interpreted without its
+loss definition and target units.
 
 ## Interview-Oriented Reading Order
 

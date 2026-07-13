@@ -6,10 +6,43 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import volcast.evaluation.train_evaluate as train_evaluate
 import volcast.features.build_features as build_features
 import volcast.features.compute_rv as compute_rv
+from volcast.shared.config import load_config
+
+
+def test_portable_config_uses_feasible_one_year_initial_window() -> None:
+    """The shipped two-year cache should use a one-year portable burn-in."""
+    config = load_config()
+
+    assert config["forecast"]["initial_train_years"] == 1
+
+
+def test_walk_forward_rejects_infeasible_initial_window() -> None:
+    """An impossible calendar burn-in should fail before writing empty evidence."""
+    feature_dates = pd.bdate_range("2022-11-02", "2024-12-20")
+    features_df = pd.DataFrame(
+        {
+            "date": feature_dates,
+            "rv_1d_ahead": np.full(len(feature_dates), 0.0001),
+        }
+    )
+    config = {
+        "forecast": {
+            "initial_train_years": 5,
+            "retrain_every_days": 21,
+        },
+        "models": {"enabled": ["har"]},
+    }
+
+    with pytest.raises(
+        train_evaluate.InsufficientTrainingHistoryError,
+        match=r"[0-9]+ feature rows span 2022-11-02 to 2024-12-20.*2027-11-02",
+    ):
+        train_evaluate.walk_forward_evaluate(features_df, "SPY", 1, config)
 
 
 def test_compute_model_diagnostics_counts_floor_hits() -> None:

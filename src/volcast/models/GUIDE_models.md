@@ -10,6 +10,17 @@ The model groups are:
 - **Conditional-variance baseline**: GARCH(1,1).
 - **Feature-driven regressors**: Ridge, Lasso, and XGBoost.
 
+For GARCH(1,1), let $r_t$ be the return observed at forecast origin $t$ and let
+$\sigma_t^2$ be conditional variance. The one-day update is
+
+$$
+\sigma_{t+1}^2=\omega+\alpha r_t^2+\beta\sigma_t^2.
+$$
+
+For a horizon longer than one day, future expected variances recurse with
+persistence $\alpha+\beta$. The model averages the next $h$ conditional
+variances so its output matches the project's $h$-day mean-variance target.
+
 This folder is intentionally narrow. It does not build features, define targets,
 or score forecasts. It only maps prepared inputs to positive variance
 predictions.
@@ -27,7 +38,8 @@ reduces negative raw predictions and hard-floor clipping artifacts.
   HAR-RV benchmark using `rv_cc_d`, `rv_cc_w`, and `rv_cc_m`.
 
 - `src/volcast/models/garch.py`
-  GARCH(1,1) wrapper built on `arch`, fitted to daily returns.
+  Horizon-aware GARCH(1,1) wrapper built on `arch`, fitted to daily returns and
+  returning the mean expected variance over the target horizon.
 
 - `src/volcast/models/linear.py`
   Ridge and Lasso with feature scaling, time-series CV, and log-target fitting.
@@ -47,3 +59,6 @@ Where to start in code:
 
 - 2026-04-19: Updated imports to absolute `volcast.models.*` paths so model modules
   stay stable after the broader `src/` reorganization.
+- 2026-07-13: GARCH forecasts now carry the fitted variance state out of sample
+  and average horizon-specific expected variances instead of reusing one-day
+  forecasts for the five-day target.

@@ -15,6 +15,11 @@ The most important design choice at the root is that the default path starts
 from stage 2. Stage 1 exists for cache refresh only when ClickHouse is
 available.
 
+The checked-in cache supports a one-calendar-year initial training window. This
+is the portable default in `config.toml`. Stage 4 rejects longer settings when
+the feature history cannot supply a first out-of-sample date, so a configuration
+mistake cannot silently become an empty benchmark.
+
 # Part 2: Code Reference
 
 - `README.md`
@@ -22,7 +27,8 @@ available.
 
 - `config.toml`
   Single configuration file for symbols, date range, cache settings, feature
-  settings, horizons, and enabled models.
+  settings, horizons, one-year portable burn-in, retraining cadence, and enabled
+  models.
 
 - `src/volcast/`
   Importable package, organized by responsibility (`data`, `features`,
@@ -40,8 +46,8 @@ available.
   parquet to stage-4 evaluation outputs.
 
 - `docs/reference/`
-  Ground-truth documentation for raw cache contract, workflow, and data
-  dictionary.
+  Ground-truth documentation for the raw cache, offline workflow, evaluation
+  protocol, and data dictionary.
 
 Where to start in code:
 
@@ -56,3 +62,5 @@ Where to start in code:
 - 2026-04-19: Removed the HTML report surface and rewired the project around a
   four-stage offline-first workflow with a teaching notebook as the main
   presentation artifact.
+- 2026-07-13: Replaced the infeasible five-year portable burn-in with one year
+  and made stage 4 fail fast when a requested calendar window leaves no test row.

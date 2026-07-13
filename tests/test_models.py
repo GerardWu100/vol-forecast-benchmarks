@@ -103,6 +103,28 @@ class TestGARCHModel:
         model = GARCHModel()
         assert model.name == "GARCH(1,1)"
 
+    def test_rejects_non_positive_forecast_horizon(self) -> None:
+        """A horizon must contain at least one conditional variance."""
+        with np.testing.assert_raises_regex(ValueError, "forecast_horizon must be positive"):
+            GARCHModel(forecast_horizon=0)
+
+    def test_multiday_forecast_averages_expected_variances(self) -> None:
+        """A two-day target should receive the mean of two variance forecasts."""
+        model = GARCHModel(forecast_horizon=2)
+        model._omega = 0.01
+        model._alpha = 0.20
+        model._beta = 0.50
+        model._last_conditional_variance = 0.0004
+
+        X = pd.DataFrame({"daily_returns": [0.01]})
+        prediction = model.predict(X)[0]
+
+        omega_decimal = 0.01 / 10_000.0
+        one_day = omega_decimal + 0.20 * 0.01**2 + 0.50 * 0.0004
+        two_day = omega_decimal + (0.20 + 0.50) * one_day
+        expected_average = (one_day + two_day) / 2.0
+        np.testing.assert_allclose(prediction, expected_average)
+
     def test_captures_vol_clustering(self) -> None:
         X, y = self._make_data(n=500)
         model = GARCHModel()
