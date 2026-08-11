@@ -580,10 +580,10 @@ with <code>atm_iv</code>, <code>iv_skew</code>, <code>iv_term_slope</code>.
 <b>Role:</b> three of the fourteen model predictors.</p></div>
 
 <div class="box def"><span class="k">The three readings</span>
-<p>$$\text{atm\_iv}_t=\frac{\text{bid\_iv}+\text{ask\_iv}}{2}\ \text{ for the call with }
+<p>$$\mathrm{atm\_iv}_t=\frac{\mathrm{bid\_iv}+\mathrm{ask\_iv}}{2}\ \text{ for the call with }
 \arg\min_k\left|\delta_k-0.50\right|$$</p>
-<p>$$\text{iv\_skew}_t=\sigma^{\text{put}}_{\delta=-0.25}-\sigma^{\text{call}}_{\delta=+0.25}$$</p>
-<p>$$\text{iv\_term\_slope}_t=\sigma^{\text{atm}}_{\text{second expiry}}-\sigma^{\text{atm}}_{\text{front expiry}}$$</p>
+<p>$$\mathrm{iv\_skew}_t=\sigma^{\text{put}}_{\delta=-0.25}-\sigma^{\text{call}}_{\delta=+0.25}$$</p>
+<p>$$\mathrm{iv\_term\_slope}_t=\sigma^{\text{atm}}_{\text{second expiry}}-\sigma^{\text{atm}}_{\text{front expiry}}$$</p>
 <p class="fnote">$\sigma$ is implied volatility, the volatility figure that makes
 an option pricing model reproduce the quoted price; it is quoted as an annual
 fraction, so 0.165 means 16.5 per cent a year. $\delta_k$ is contract $k$'s
@@ -644,7 +644,7 @@ runs from 2022-11-02 to 2024-12-20 and holds <b>537 rows</b> after 27 rows were
 dropped for missing values.</p></div>
 
 <div class="box def"><span class="k">The IV-RV spread</span>
-<p>$$\text{iv\_rv\_spread}_t=\text{atm\_iv}_t-\sqrt{252\,x^{(w)}_t}$$</p>
+<p>$$\mathrm{iv\_rv\_spread}_t=\mathrm{atm\_iv}_t-\sqrt{252\,x^{(w)}_t}$$</p>
 <p class="fnote">$x^{(w)}_t$ is the weekly average realised variance from stage 2,
 a daily variance. Multiplying by 252 trading days converts it to an annual
 variance, and the square root turns it into an annual volatility, so it can be
