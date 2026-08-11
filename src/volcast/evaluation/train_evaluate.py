@@ -93,6 +93,7 @@ def _fit_and_predict(
     model_key: str,
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
+    garch_state_df: pd.DataFrame,
     target_col: str,
     horizon: int,
 ) -> tuple[np.ndarray, str]:
@@ -106,6 +107,11 @@ def _fit_and_predict(
         Expanding in-sample feature and target rows.
     test_df : pd.DataFrame
         Next chronological forecast block.
+    garch_state_df : pd.DataFrame
+        Rows running from the last training row through the end of ``test_df``.
+        Only the GARCH path uses this frame: its conditional-variance recursion
+        has to step through every intervening row, including any purged ones, so
+        the state reaching the first forecast date is current rather than stale.
     target_col : str
         Variance target column matching ``horizon``.
     horizon : int
@@ -114,7 +120,7 @@ def _fit_and_predict(
     Returns
     -------
     tuple[np.ndarray, str]
-        Forecast vector and human-readable model name.
+        Forecast vector aligned with ``test_df`` rows, and a display model name.
     """
     y_train = train_df[target_col]
 
@@ -123,7 +129,13 @@ def _fit_and_predict(
         model = GARCHModel(forecast_horizon=horizon)
         garch_columns = FEATURE_COLS + ["daily_returns"]
         model.fit(train_df[garch_columns], y_train)
-        return model.predict(test_df[garch_columns]), model.name
+
+        # predict() seeds its recursion with the last fitted conditional variance,
+        # which belongs to the last training row. Feeding the warm-up rows first
+        # advances that state one day at a time up to the test block; only the
+        # tail of the result lines up with test_df.
+        state_predictions = model.predict(garch_state_df[garch_columns])
+        return state_predictions[-len(test_df) :], model.name
 
     model = MODEL_REGISTRY[model_key]()
     model.fit(train_df[FEATURE_COLS], y_train)
@@ -197,9 +209,16 @@ def walk_forward_evaluate(
     if target_col not in working_df.columns:
         raise ValueError(f"Missing target column: {target_col}")
 
-    # First out-of-sample date must leave enough history for model fitting.
+    # The target for feature row i averages realised variance over the horizon
+    # trading days after i. Rows within horizon-1 of the first test date therefore
+    # carry variance realised inside the forecast window, so they are purged from
+    # the training slice. For horizon=1 nothing is purged.
+    purged_train_rows = horizon - 1
+
+    # First out-of-sample date must leave enough history for model fitting, counted
+    # after the purge so the minimum training size still holds.
     train_end_idx = _initial_train_end_index(working_df["date"], initial_train_years)
-    train_end_idx = max(train_end_idx, MIN_TRAIN_OBS)
+    train_end_idx = max(train_end_idx, MIN_TRAIN_OBS + purged_train_rows)
     if train_end_idx >= len(working_df):
         first_date = pd.Timestamp(working_df["date"].iloc[0])
         last_date = pd.Timestamp(working_df["date"].iloc[-1])
@@ -217,7 +236,8 @@ def walk_forward_evaluate(
     forecast_chunks: list[pd.DataFrame] = []
 
     for point_idx, retrain_idx in enumerate(retrain_points):
-        train_df = working_df.iloc[:retrain_idx]
+        # Purge the last horizon-1 rows so no training target overlaps the test block.
+        train_df = working_df.iloc[: retrain_idx - purged_train_rows]
 
         # Each retrain point forecasts until the next retrain boundary.
         if point_idx + 1 < len(retrain_points):
@@ -229,10 +249,15 @@ def walk_forward_evaluate(
         if test_df.empty:
             continue
 
+        # Warm-up frame for the GARCH variance recursion: the last training row,
+        # then the purged rows, then the test block itself.
+        last_train_idx = retrain_idx - purged_train_rows - 1
+        garch_state_df = working_df.iloc[last_train_idx:test_end]
+
         for model_key in enabled_models:
             try:
                 predictions, model_name = _fit_and_predict(
-                    model_key, train_df, test_df, target_col, horizon
+                    model_key, train_df, test_df, garch_state_df, target_col, horizon
                 )
             except Exception as error:
                 LOGGER.warning(
@@ -288,7 +313,7 @@ def compute_model_diagnostics(forecasts_df: pd.DataFrame) -> pd.DataFrame:
                 "symbol": symbol,
                 "horizon": horizon,
                 "model": model_name,
-                "n_obs": int(len(valid)),
+                "n_obs": len(valid),
                 "floor_hit_count": int(floor_hits.sum()),
                 "floor_hit_rate": float(floor_hits.mean()),
                 "min_prediction": float(valid["y_pred"].min()),
@@ -342,13 +367,16 @@ def compute_dm_tests(forecasts_df: pd.DataFrame) -> pd.DataFrame:
     dm_rows: list[dict[str, object]] = []
 
     for (symbol, horizon), group in forecasts_df.groupby(["symbol", "horizon"]):
-        models = sorted(group["model"].unique())
-
         # Align model forecasts on common evaluation dates before loss comparison.
         pivot = group.pivot_table(index="date", columns="model", values=["y_true", "y_pred"])
         pivot = pivot.dropna()
         if len(pivot) < MIN_OBS_FOR_DM:
             continue
+
+        # Read the model list off the pivot rather than off the raw group: a model
+        # whose forecasts are all NaN has no y_pred column here, and naming it
+        # would raise a KeyError partway through the comparison loop.
+        models = sorted(pivot["y_pred"].columns)
 
         y_true = pivot["y_true"].iloc[:, 0].to_numpy(dtype=float)
 
