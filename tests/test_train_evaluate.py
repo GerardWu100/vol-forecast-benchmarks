@@ -8,9 +8,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import volcast.evaluation.train_evaluate as train_evaluate
-import volcast.features.build_features as build_features
-import volcast.features.compute_rv as compute_rv
+from volcast.evaluation import train_evaluate
+from volcast.features import build_features, compute_rv
 from volcast.shared.config import load_config
 
 

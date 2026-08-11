@@ -101,9 +101,7 @@ class GARCHModel(ForecastModel):
             # At feature date t, return r_t is observed. It updates the one-step
             # conditional variance forecast for target day t+1.
             one_step_variance = (
-                omega_decimal
-                + self._alpha * observed_return**2
-                + self._beta * previous_variance
+                omega_decimal + self._alpha * observed_return**2 + self._beta * previous_variance
             )
 
             # For k>1, E_t[r_{t+k-1}^2] equals its conditional variance, so the
@@ -114,9 +112,7 @@ class GARCHModel(ForecastModel):
                 horizon_variance = omega_decimal + persistence * horizon_variance
                 variance_sum += horizon_variance
 
-            average_variance_forecasts[row_index] = (
-                variance_sum / self._forecast_horizon
-            )
+            average_variance_forecasts[row_index] = variance_sum / self._forecast_horizon
             previous_variance = one_step_variance
 
         return np.maximum(average_variance_forecasts, MIN_POSITIVE_VARIANCE)

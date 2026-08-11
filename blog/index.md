@@ -114,9 +114,7 @@ where $\omega>0$ is the variance intercept, $\alpha\geq0$ is the shock response,
 
 ```python
 one_step_variance = (
-    omega_decimal
-    + self._alpha * observed_return**2
-    + self._beta * previous_variance
+    omega_decimal + self._alpha * observed_return**2 + self._beta * previous_variance
 )
 
 horizon_variance = one_step_variance

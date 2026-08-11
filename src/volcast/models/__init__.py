@@ -8,9 +8,9 @@ from volcast.models.xgboost_model import XGBoostModel
 
 __all__ = [
     "ForecastModel",
-    "HARModel",
     "GARCHModel",
-    "RidgeModel",
+    "HARModel",
     "LassoModel",
+    "RidgeModel",
     "XGBoostModel",
 ]

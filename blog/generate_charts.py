@@ -163,9 +163,7 @@ def _plot_qlike_difference(scores_df: pd.DataFrame) -> None:
         Writes ``02_qlike_vs_har.png``.
     """
     baseline = (
-        scores_df[scores_df["model"] == "HAR-RV"]
-        .set_index("horizon")["qlike"]
-        .rename("har_qlike")
+        scores_df[scores_df["model"] == "HAR-RV"].set_index("horizon")["qlike"].rename("har_qlike")
     )
     plot_df = scores_df.join(baseline, on="horizon")
     plot_df["qlike_difference"] = plot_df["qlike"] - plot_df["har_qlike"]
@@ -231,7 +229,9 @@ def _plot_forecast_paths(forecasts_df: pd.DataFrame) -> None:
         model_vol = np.sqrt(TRADING_DAYS_PER_YEAR * model_df["y_pred"]) * 100.0
         ax.plot(model_df["date"], model_vol, color=color, linewidth=1.7, label=model)
 
-    ax.set_title("One-day forecasts smooth the realised volatility spikes", loc="left", weight="bold")
+    ax.set_title(
+        "One-day forecasts smooth the realised volatility spikes", loc="left", weight="bold"
+    )
     ax.set_ylabel("Annualised volatility (%)")
     ax.set_xlabel("Forecast date")
     ax.grid(axis="y", color="#d7dde3", linewidth=0.7)

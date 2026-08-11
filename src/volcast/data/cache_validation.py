@@ -224,7 +224,7 @@ def build_sidecar_payload(
         "parquet_file": output_path.name,
         "schema_columns": cache_spec.schema_columns,
         "date_column": cache_spec.date_column,
-        "row_count": int(len(dataframe)),
+        "row_count": len(dataframe),
         "min_date": min_date,
         "max_date": max_date,
         "request_start_date": start_date,

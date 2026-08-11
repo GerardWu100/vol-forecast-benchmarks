@@ -114,9 +114,7 @@ où $\omega>0$ est la constante de variance, $\alpha\geq0$ la réaction au choc 
 
 ```python
 one_step_variance = (
-    omega_decimal
-    + self._alpha * observed_return**2
-    + self._beta * previous_variance
+    omega_decimal + self._alpha * observed_return**2 + self._beta * previous_variance
 )
 
 horizon_variance = one_step_variance
