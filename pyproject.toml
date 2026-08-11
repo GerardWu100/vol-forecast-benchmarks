@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "vol-forecast-benchmarks"
 version = "0.1.0"
 description = "Minute-to-daily volatility forecasting benchmarks"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "arch>=7.0",
     "clickhouse-connect>=0.7",
@@ -26,7 +26,7 @@ notebook = ["jupyter>=1.0", "nbconvert>=7.0"]
 
 [tool.ruff]
 line-length = 99
-target-version = "py311"
+target-version = "py313"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
