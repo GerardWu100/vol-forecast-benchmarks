@@ -169,29 +169,27 @@
 
 <p class="eyebrow"><span class="dot"></span>VolCast &middot; vol-forecast-benchmarks &middot; code walkthrough</p>
 <h1>VolCast: reading the code</h1>
-<p class="lede">How this repository turns minute-by-minute SPY prices into a fair
-contest between five volatility forecasting models, what each piece does, and
-where the contest is less fair than it looks.</p>
+<p class="lede">How the repository turns minute-by-minute SPY prices into a test of
+five volatility forecasts, what each part does, and where the test is less fair
+than it looks.</p>
 
 <div class="box def">
   <span class="k">How to use this</span>
-  <p>Sections follow execution order, from raw parquet files through to the
-  scoreboard. Every code snippet is copied from the files under
-  <code>src/volcast/</code>. Every number in a grey <b>Sample data</b> box came
-  from running the code on the repository's own checked-in data on
-  2026-08-10 &mdash; none of them are estimates. Coloured boxes flag design
-  choices, traps, and weaknesses.</p>
+  <p>Sections follow execution order, from raw Parquet files to the scoreboard.
+  Every code snippet comes from <code>src/volcast/</code>. Every number in a grey
+  <b>Sample data</b> box came from the repository's checked-in data on
+  2026-08-10; none is an estimate. Coloured boxes mark design choices, traps,
+  and weaknesses.</p>
 </div>
 
 <div class="box why">
   <span class="k">The process in plain English</span>
-  <p>Volatility is how much a price jumps around. This project measures how much
-  SPY actually jumped around on each day, using minute-by-minute prices, and
-  then asks five different models to predict how much it will jump around
-  tomorrow, and over the coming week. Each model is only ever allowed to see the
-  past, is refitted every 21 trading days, and is scored on 286 days it never
-  trained on. The scoreboard says which model predicted best, and a statistical
-  test says whether the gap between two models is big enough to believe.</p>
+  <p>Volatility measures how much a price moves. This project measures SPY's
+  daily movement from minute prices, then asks five models to forecast it for
+  tomorrow and the following week. Each model sees only the past, is refitted
+  every 21 trading days, and is scored on 286 days it never trained on. The
+  scoreboard ranks the forecasts; a statistical test checks whether a gap
+  between two models is large enough to treat as meaningful.</p>
 </div>
 
 <h2 id="map"><span class="sec-no">00</span>Map</h2>
@@ -212,9 +210,9 @@ flowchart LR
   dm --> out
   dg --> out
 </div>
-<p class="fnote">Rounded boxes are functions, cylinders are files on disk,
-arrows are the direction the data moves. The three scoring functions all read
-the same forecast table that <code>walk_forward_evaluate</code> produced.</p>
+<p class="fnote">Rounded boxes are functions, cylinders are files, and arrows show
+data flow. The three scoring functions read the forecast table from
+<code>walk_forward_evaluate</code>.</p>
 
 <div class="toc">
   <div class="rk">Contents</div>
@@ -241,18 +239,18 @@ the same forecast table that <code>walk_forward_evaluate</code> produced.</p>
 <h2 id="layout"><span class="sec-no">01</span>What is where &mdash; folders and entry points</h2>
 
 <p>The package lives under <code>src/volcast/</code> and is organised by job, not
-by file type. Nothing outside <code>src/</code> is importable product code.</p>
+file type. Only code under <code>src/</code> is importable product code.</p>
 
 <div class="scroll">
 <table>
 <thead><tr><th>Folder</th><th>What lives there</th><th>Depends on</th></tr></thead>
 <tbody>
-<tr><td><code>shared/</code></td><td>Config loading, project paths, logging setup</td><td>nothing</td></tr>
-<tr><td><code>data/</code></td><td>Stage 1: raw parquet cache validation and optional database refresh</td><td><code>shared/</code></td></tr>
-<tr><td><code>features/</code></td><td>Stages 2 and 3: variance estimators, option features, the feature table</td><td><code>shared/</code></td></tr>
-<tr><td><code>models/</code></td><td>The five forecasters behind one shared interface</td><td>nothing in the package</td></tr>
-<tr><td><code>evaluation/</code></td><td>Stage 4: walk-forward loop, loss functions, statistical test</td><td><code>features/</code>, <code>models/</code>, <code>shared/</code></td></tr>
-<tr><td><code>pipeline/</code></td><td>The orchestrator that runs the stages in order</td><td>all of the above</td></tr>
+<tr><td><code>shared/</code></td><td>Loads settings, builds project paths, and sets up logging</td><td>nothing</td></tr>
+<tr><td><code>data/</code></td><td>Stage 1: validates the raw Parquet cache and can refresh it from the database</td><td><code>shared/</code></td></tr>
+<tr><td><code>features/</code></td><td>Stages 2 and 3: variance estimates, option inputs, and the feature table</td><td><code>shared/</code></td></tr>
+<tr><td><code>models/</code></td><td>The five forecasters behind one interface</td><td>nothing in the package</td></tr>
+<tr><td><code>evaluation/</code></td><td>Stage 4: walk-forward loop, loss functions, and statistical tests</td><td><code>features/</code>, <code>models/</code>, <code>shared/</code></td></tr>
+<tr><td><code>pipeline/</code></td><td>Runs the stages in order</td><td>all of the above</td></tr>
 </tbody>
 </table>
 </div>
@@ -287,32 +285,31 @@ that requirement.</p></div>
 
 <h2 id="config"><span class="sec-no">02</span>Settings &mdash; <code>config.toml</code> and <code>shared/</code></h2>
 
-<p>There is exactly one settings file. Every stage reads it through
-<code>load_config()</code>, which resolves the path from the location of the
-source file rather than from the working directory:</p>
+<p>There is one settings file. Every stage reads it through
+<code>load_config()</code>, which finds it from the source file's location rather
+than the working directory:</p>
 
 <pre>PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 <span class="c"># src/volcast/shared/paths.py -&gt; shared -&gt; volcast -&gt; src -&gt; project root</span></pre>
 
 <div class="box why"><span class="k">Why paths are derived, not hard-coded</span>
-<p>Because the four <code>.parent</code> hops are counted from the file itself,
-every command works the same whether you launch it from the project root, from
-<code>notebooks/</code>, or from anywhere else on the machine. There is no
-<code>os.getcwd()</code> anywhere in the package.</p></div>
+<p>The four <code>.parent</code> hops start at the file itself, so every command
+works the same from the project root, <code>notebooks/</code>, or any other
+directory. The package never calls <code>os.getcwd()</code>.</p></div>
 
-<h4>The settings that change the answer</h4>
+<h4>The settings that change the result</h4>
 
 <div class="scroll">
 <table>
 <thead><tr><th>Setting</th><th>Default</th><th>What changing it does</th></tr></thead>
 <tbody>
-<tr><td><code>forecast.horizons</code></td><td><code>[1, 5]</code></td><td>Which targets get forecast. Only 1 and 5 exist, because stage 2 only builds <code>rv_1d_ahead</code> and <code>rv_5d_ahead</code>. Adding 10 here raises <code>ValueError: Missing target column: rv_10d_ahead</code>.</td></tr>
-<tr><td><code>forecast.initial_train_years</code></td><td><code>1</code></td><td>How much history is held back before the first forecast. Raising it shortens the test set; raise it too far and stage 4 stops with <code>InsufficientTrainingHistoryError</code> instead of writing an empty scoreboard.</td></tr>
-<tr><td><code>forecast.retrain_every_days</code></td><td><code>21</code></td><td>How often models are refitted. Smaller means more refits and slower runs; larger means each model's parameters go staler before the end of its forecast block.</td></tr>
-<tr><td><code>models.enabled</code></td><td>all five</td><td>Which models compete. Dropping one removes it from the scoreboard and from every pairwise test.</td></tr>
-<tr><td><code>rv.min_minutes_per_day</code></td><td><code>300</code></td><td>A trading day with fewer minute bars than this is thrown away. This is what filters out half-days and data outages.</td></tr>
-<tr><td><code>options.min_dte</code>, <code>max_dte</code></td><td><code>7</code>, <code>45</code></td><td>Which option expiries count when reading implied volatility. Widening the window changes which contract is picked as at-the-money.</td></tr>
-<tr><td><code>options.max_ffill_days</code></td><td><code>3</code></td><td>How many days an option or VIX reading may be carried forward across a gap before the row is dropped instead.</td></tr>
+<tr><td><code>forecast.horizons</code></td><td><code>[1, 5]</code></td><td>Chooses the forecast targets. Only 1 and 5 exist because stage 2 builds <code>rv_1d_ahead</code> and <code>rv_5d_ahead</code>. Adding 10 raises <code>ValueError: Missing target column: rv_10d_ahead</code>.</td></tr>
+<tr><td><code>forecast.initial_train_years</code></td><td><code>1</code></td><td>Sets the history held back before the first forecast. Raising it shortens the test set; raising it too far makes stage 4 stop with <code>InsufficientTrainingHistoryError</code> instead of writing an empty scoreboard.</td></tr>
+<tr><td><code>forecast.retrain_every_days</code></td><td><code>21</code></td><td>Sets how often models are refitted. A smaller value means more refits and slower runs; a larger value leaves parameters stale for longer.</td></tr>
+<tr><td><code>models.enabled</code></td><td>all five</td><td>Chooses the competing models. Removing one removes it from the scoreboard and every pairwise test.</td></tr>
+<tr><td><code>rv.min_minutes_per_day</code></td><td><code>300</code></td><td>Sets the minimum number of minute bars in a trading day. Days below it are dropped, which removes half-days and data outages.</td></tr>
+<tr><td><code>options.min_dte</code>, <code>max_dte</code></td><td><code>7</code>, <code>45</code></td><td>Sets which option expiries count for implied volatility. Widening the window can change the contract selected as at-the-money.</td></tr>
+<tr><td><code>options.max_ffill_days</code></td><td><code>3</code></td><td>Sets how many days an option or VIX reading can be carried across a gap before the row is dropped.</td></tr>
 <tr><td><code>data.start_date</code>, <code>end_date</code></td><td>2022-10-01 to 2024-12-31</td><td>Used <b>only</b> by stage 1 to validate the cache. Stages 2 to 4 never filter on these dates.</td></tr>
 </tbody>
 </table>
@@ -320,54 +317,50 @@ every command works the same whether you launch it from the project root, from
 
 <div class="box warn"><span class="k">Trap: two settings are read by nothing</span>
 <p><code>rv.estimators</code> and <code>rv.target_estimator</code> appear in
-<code>config.toml</code> with helpful comments, but a search across
-<code>src/</code> finds no code that reads either key. All three variance
-estimators are always computed, and the forecast target is always
-<code>rv_cc</code>, written literally into
-<code>compute_rv._add_forecast_targets</code>. Changing
-<code>target_estimator = "parkinson"</code> has no effect at all.</p></div>
+<code>config.toml</code>, but no code under <code>src/</code> reads them. All
+three variance estimators are always computed, and the target is always
+<code>rv_cc</code>, written directly in <code>compute_rv._add_forecast_targets</code>.
+Changing <code>target_estimator = "parkinson"</code> does nothing.</p></div>
 
 <div class="box warn"><span class="k">Trap: <code>rv.har_lags</code> is not really adjustable</span>
-<p><code>add_har_lags</code> names its output columns from a fixed map,
-<code>{1: "d", 5: "w", 22: "m"}</code>, and falls back to the number itself for
-anything else. The feature list <code>FEATURE_COLS</code> then asks for
-<code>rv_cc_d</code>, <code>rv_cc_w</code>, <code>rv_cc_m</code> by name. Setting
-<code>har_lags = [1, 10, 30]</code> would silently produce columns called
-<code>rv_cc_10</code> and <code>rv_cc_30</code>, and stage 3 would then fail with
-a missing-column error. The setting only accepts <code>[1, 5, 22]</code>.</p></div>
+<p><code>add_har_lags</code> names columns from the fixed map
+<code>{1: "d", 5: "w", 22: "m"}</code> and uses the number itself for any other
+lag. <code>FEATURE_COLS</code> then expects <code>rv_cc_d</code>,
+<code>rv_cc_w</code>, and <code>rv_cc_m</code>. Setting
+<code>har_lags = [1, 10, 30]</code> would create <code>rv_cc_10</code> and
+<code>rv_cc_30</code>, after which stage 3 would fail because the expected
+columns are missing. Use <code>[1, 5, 22]</code>.</p></div>
 
 <h2 id="stage1"><span class="sec-no">03</span>Stage 1 &mdash; the cache contract</h2>
 
-<p>Stage 1 is optional and is skipped by default. Its job is to answer one
-question: <i>is the parquet data in <code>data/raw/</code> exactly the data this
-project expects?</i> If yes, it does nothing. If no, and a ClickHouse database is
-reachable, it refetches only the broken datasets.</p>
+<p>Stage 1 is optional and skipped by default. It checks whether the <i>Parquet
+data in <code>data/raw/</code> matches what the project expects</i>. If it does,
+nothing happens. If it does not and ClickHouse is reachable, only the broken
+datasets are fetched again.</p>
 
-<p>Each parquet file has a companion JSON file beside it, for example
+<p>Each Parquet file has a companion JSON file, such as
 <code>SPY_minutes.parquet.metadata.json</code>. <code>validate_cache_spec</code>
-checks eight things: the parquet exists; the options cache is a directory of
-shards rather than one file; the sidecar exists and parses; the sidecar has
-exactly the expected set of keys; the cache version, dataset name, file name,
-column list, and requested date range all match; the parquet's own columns match
-in the same order; the row count matches; and the earliest and latest dates match.</p>
+checks that the files exist and parse, the options cache is a directory of
+shards, the metadata keys are exact, the cache version, dataset name, file name,
+columns, and requested dates match, and the Parquet columns, row count, and first
+and last dates match.</p>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> a <code>CacheSpec</code> describing one expected dataset, plus
-the cache folder. <b>Output:</b> a <code>(is_valid, reason)</code> pair, where the
-reason is a sentence naming the file and the mismatch. <b>Role:</b> lets the
-project fail loudly on stale data rather than quietly benchmarking a mixture of
-two different vintages.</p></div>
+<p><b>Input:</b> a <code>CacheSpec</code> for one dataset and the cache folder.
+<b>Output:</b> a <code>(is_valid, reason)</code> pair; the reason names the file
+and mismatch. <b>Role:</b> stops stale data from being mixed into the benchmark
+without notice.</p></div>
 
 <div class="box flag"><span class="k">Not run for this page</span>
 <p>Stage 1's refresh path needs a ClickHouse database that is not available here,
-so it was <b>not executed</b> and no sample output is shown for it. Its validation
-path is exercised by <code>tests/test_fetch_data_cache.py</code>, which passes.
-Everything else on this page was run.</p></div>
+so it was <b>not executed</b> and has no sample output. Its validation path is
+covered by <code>tests/test_fetch_data_cache.py</code>, which passes. Everything
+else on this page was run.</p></div>
 
 <h2 id="stage2"><span class="sec-no">04</span>Stage 2 &mdash; measuring realised variance</h2>
 
-<p>This is where "how much did the price actually move" gets a number. The input
-is 454,835 minute bars for SPY. The output is one row per trading day.</p>
+<p>This stage measures how much the price moved. It takes 454,835 SPY minute bars
+and returns one row per trading day.</p>
 
 <h3><code>close_to_close_rv</code> &mdash; add up the squared minute moves</h3>
 
@@ -383,23 +376,21 @@ is 454,835 minute bars for SPY. The output is one row per trading day.</p>
     return float(realised_variance)</pre>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>Take every minute's price change during the day, square each one so that ups
-and downs both count as movement, and add them all up. A calm day gives a small
-number; a wild day gives a big one.</p></div>
+<p>Square each minute's price change so gains and losses both count, then add the
+results. A calm day has a small value; a volatile day has a large one.</p></div>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> one day's minute closing prices as an array. <b>Output:</b> a
-single number, the day's realised variance. <b>Role:</b> this is the
-<code>rv_cc</code> column, and shifted forward it becomes the thing every model
-is trying to predict.</p></div>
+<p><b>Input:</b> one day's minute closing prices as an array. <b>Output:</b> the
+day's realised variance, a single number. <b>Role:</b> this becomes the
+<code>rv_cc</code> column and, shifted forward, the target every model predicts.</p></div>
 
 <div class="box def"><span class="k">The formula</span>
 <p>$$RV_t=\sum_{i=1}^{m_t} r_{i,t}^{2},\qquad r_{i,t}=\log\frac{C_{i,t}}{C_{i-1,t}}$$</p>
-<p class="fnote">$RV_t$ is the realised variance on day $t$. $C_{i,t}$ is the
-closing price of the $i$-th minute bar on day $t$. $r_{i,t}$ is that minute's log
-return. $m_t$ is the number of minute bars kept on day $t$, which the sample
-below shows is 911 on the first day. Note that the sum runs over minutes
-<i>within</i> the day only, so the overnight price jump is not included.</p></div>
+<p class="fnote">$RV_t$ is realised variance on day $t$. $C_{i,t}$ is the closing
+price of minute bar $i$ on day $t$. $r_{i,t}$ is that bar's log return. $m_t$ is
+the number of kept minute bars on day $t$; the sample has 911 on the first day.
+The sum covers minutes <i>within</i> the day, so it excludes the overnight price
+jump.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io">
@@ -418,16 +409,16 @@ rv_gk          0.000296
 n_minutes           911
 daily_close   350.7858</pre></div>
 </div>
-<p>Across the whole sample, 454,835 minute bars collapse into <b>564 daily
-rows</b>. The square root of $252 \times 0.000164$ is 0.203, so that day's
-movement annualises to about 20.3 per cent.</p></div>
+<p>The sample's 454,835 minute bars become <b>564 daily rows</b>. The square root
+of $252 \times 0.000164$ is 0.203, so that day's movement annualises to about
+20.3 per cent.</p></div>
 
 <div class="box warn"><span class="k">Trap: these are extended-hours bars</span>
-<p>The timestamps run from 04:00 to 19:59, not 09:30 to 16:00. The data includes
-pre-market and after-hours trading, so <code>daily_close</code> is the 19:59
-price rather than the official 16:00 close, and <code>daily_open</code> is the
-04:00 price. This is not wrong, but it means "close-to-close" in the variable
-names does not mean the exchange close.</p></div>
+<p>The timestamps run from 04:00 to 19:59, not 09:30 to 16:00, so they include
+pre-market and after-hours trading. <code>daily_close</code> is therefore the
+19:59 price, not the official 16:00 close, and <code>daily_open</code> is the
+04:00 price. The code is consistent; "close-to-close" does not mean exchange
+close here.</p></div>
 
 <h3><code>parkinson_rv</code> and <code>garman_klass_rv</code> &mdash; range-based estimates</h3>
 
@@ -436,25 +427,23 @@ names does not mean the exchange close.</p></div>
 <p>$$RV^{\text{PK}}_t=\frac{1}{4\log 2}\left(\log\frac{H_t}{L_t}\right)^{2}$$</p>
 <p>Garman-Klass adds the open-to-close move:</p>
 <p>$$RV^{\text{GK}}_t=\frac{1}{2}\left(\log\frac{H_t}{L_t}\right)^{2}-(2\log 2-1)\left(\log\frac{C_t}{O_t}\right)^{2}$$</p>
-<p class="fnote">$H_t$, $L_t$, $O_t$, $C_t$ are the day's high, low, open and
-close, taken from the minute bars. $\log$ is the natural logarithm. The constant
+<p class="fnote">$H_t$, $L_t$, $O_t$, and $C_t$ are the day's high, low, open, and
+close from the minute bars. $\log$ is the natural logarithm. The constant
 $1/(4\log 2)\approx 0.3607$ makes the Parkinson estimate unbiased for a random
-walk without drift; $2\log 2-1\approx 0.3863$ plays the same role in
-Garman-Klass. Both give a variance for the day, in the same units as $RV_t$
-above.</p></div>
+walk without drift; $2\log 2-1\approx 0.3863$ serves the same purpose in
+Garman-Klass. Both estimates measure daily variance in the same units as $RV_t$.</p></div>
 
 <div class="box why"><span class="k">Why three estimators instead of one</span>
-<p>Only <code>rv_cc</code> is ever used as the forecast target. The other two go
-in as extra <i>predictors</i>. They measure the same underlying thing through
-different windows &mdash; the range-based ones are less sensitive to a single
-outlier minute &mdash; so they carry slightly different information about how
-turbulent the day was.</p></div>
+<p>Only <code>rv_cc</code> is the forecast target. The other two are extra
+<i>predictors</i>, or model inputs. They measure the same quantity differently;
+the range-based estimates are less sensitive to one outlier minute, so they add
+some different information about the day's movement.</p></div>
 
 <div class="box warn"><span class="k">Trap the Garman-Klass code avoids</span>
-<p>Subtracting one term from another invites a negative variance. It cannot
-happen here: the daily range always covers at least the open-to-close move, so
-$|\log(H/L)| \ge |\log(C/O)|$, and $0.5 x^{2}$ is always larger than
-$0.3863 x^{2}$. The result is non-negative for every valid bar.</p></div>
+<p>Subtracting terms can produce a negative variance. It does not here: the
+daily range covers the open-to-close move, so $|\log(H/L)| \ge |\log(C/O)|$,
+and $0.5 x^{2}$ is larger than $0.3863 x^{2}$. The result is non-negative for
+every valid bar.</p></div>
 
 <h3><code>add_har_lags</code> &mdash; yesterday, last week, last month</h3>
 
@@ -473,25 +462,24 @@ $0.3863 x^{2}$. The result is non-negative for every valid bar.</p></div>
         lagged_df[lag_column_name] = rolling_mean</pre>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>For each day, record three summaries of how turbulent the recent past was:
-yesterday on its own, the average of the last five days, and the average of the
-last twenty-two days. Roughly: yesterday, last week, last month.</p></div>
+<p>For each day, record yesterday's value, the average of the last five days, and
+the average of the last twenty-two days. These are roughly yesterday, last week,
+and last month.</p></div>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> a daily frame and the name of a variance column.
-<b>Output:</b> the same frame plus three new columns, suffixed <code>_d</code>,
-<code>_w</code>, <code>_m</code>. <b>Role:</b> these nine columns (three
-estimators times three windows) are most of the model input.</p></div>
+<p><b>Input:</b> a daily frame and a variance-column name. <b>Output:</b> the
+same frame with three columns ending in <code>_d</code>, <code>_w</code>, and
+<code>_m</code>. <b>Role:</b> these nine columns (three estimators times three
+windows) make up most of the model input.</p></div>
 
 <div class="box def"><span class="k">The formula</span>
 <p>$$x^{(d)}_t=RV_{t-1},\qquad
 x^{(w)}_t=\frac{1}{5}\sum_{j=1}^{5}RV_{t-j},\qquad
 x^{(m)}_t=\frac{1}{22}\sum_{j=1}^{22}RV_{t-j}$$</p>
-<p class="fnote">$x^{(d)}_t$, $x^{(w)}_t$, $x^{(m)}_t$ are the daily, weekly and
-monthly predictors attached to row $t$. Every sum stops at $t-1$: the value on
-day $t$ itself never enters its own row's predictors. This is the
-<code>.shift(1)</code> applied <i>before</i> the rolling average, and it is the
-single most important line in the file.</p></div>
+<p class="fnote">$x^{(d)}_t$, $x^{(w)}_t$, and $x^{(m)}_t$ are the daily, weekly, and
+monthly inputs on row $t$. Every sum stops at $t-1$, so day $t$ never enters its
+own inputs. That is why <code>.shift(1)</code> comes <i>before</i> the rolling
+average. It is the key leakage safeguard in this file.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
@@ -503,13 +491,12 @@ single most important line in the file.</p></div>
 2022-11-03  0.000194   0.000499  0.000273  0.000298
 2022-11-04  0.000377   0.000194  0.000235  0.000301</pre></div>
 </div>
-<p>Read the arrow row across: on 2022-11-02 the row's own <code>rv_cc</code> is
-0.000499, but <code>rv_cc_d</code> is 0.000177, which is the <i>previous</i> row's
-value. Checked by hand, the mean of <code>rv_cc</code> over rows 17 to 21 is
-0.00020947699935387824, and <code>rv_cc_w</code> on row 22 is
-0.00020947699935387827 &mdash; equal to the last digit of floating-point noise.
-The first 21 rows carry <code>NaN</code> in <code>rv_cc_m</code> because a
-22-day average needs 22 earlier days.</p></div>
+<p>On 2022-11-02, the row's <code>rv_cc</code> is 0.000499, but
+<code>rv_cc_d</code> is 0.000177 from the <i>previous</i> row. The mean of
+<code>rv_cc</code> over rows 17 to 21 is 0.00020947699935387824; row 22 stores
+0.00020947699935387827 in <code>rv_cc_w</code>. The difference is floating-point
+rounding. The first 21 rows have <code>NaN</code> for <code>rv_cc_m</code> because
+a 22-day average needs 22 earlier days.</p></div>
 
 <h3><code>_add_forecast_targets</code> &mdash; what the models must predict</h3>
 
@@ -523,19 +510,17 @@ The first 21 rows carry <code>NaN</code> in <code>rv_cc_m</code> because a
 
 <div class="box def"><span class="k">The formula</span>
 <p>$$y_{t,1}=RV_{t+1},\qquad y_{t,5}=\frac{1}{5}\sum_{j=1}^{5}RV_{t+j}$$</p>
-<p class="fnote">$y_{t,1}$ is the one-day target attached to row $t$: tomorrow's
-realised variance. $y_{t,5}$ is the five-day target: the <i>average</i> daily
-variance over the next five trading days, not their sum and not the variance of
-the five-day return.</p></div>
+<p class="fnote">$y_{t,1}$ is tomorrow's realised variance attached to row $t$.
+$y_{t,5}$ is the <i>average</i> daily variance over the next five trading days,
+not their sum or the variance of the five-day return.</p></div>
 
 <div class="box why"><span class="k">Why the five-day target needs two shifts</span>
-<p>The three-step construction is easy to get wrong by one day, so it is worth
-tracing. <code>shift(-1)</code> puts $RV_{t+1}$ on row $t$. The rolling
-five-day mean on row $t$ then covers rows $t-4$ to $t$, which after the first
-shift holds $RV_{t-3}$ through $RV_{t+1}$ &mdash; ending in the right place but
-starting four days too early. The final <code>shift(-4)</code> pulls the window
-forward so row $t$ receives what was computed on row $t+4$, namely the mean of
-$RV_{t+1}$ through $RV_{t+5}$. Verified numerically below.</p></div>
+<p>The first <code>shift(-1)</code> puts $RV_{t+1}$ on row $t$. The rolling
+five-day mean on row $t$ covers rows $t-4$ to $t$ and, after the shift, holds
+$RV_{t-3}$ through $RV_{t+1}$. It ends in the right place but starts four days
+early. The final <code>shift(-4)</code> moves the window forward, so row $t$
+receives the value computed on row $t+4$: the mean of $RV_{t+1}$ through
+$RV_{t+5}$. The sample below checks this numerically.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io">
@@ -554,44 +539,43 @@ rv_5d_ahead  0.000200   &lt;- mean of rows 23..27</pre>
 0.00019972490575326625; the stored <code>rv_5d_ahead</code> on row 22 is
 0.00019972490575326623.</p></div>
 </div>
-<p>The last row of the file has <code>NaN</code> for both targets, and the last
-five rows have <code>NaN</code> for the five-day target, because the future they
-need has not happened yet. Stage 3 drops those rows.</p></div>
+<p>The last row has <code>NaN</code> for both targets. The last five rows have
+<code>NaN</code> for the five-day target because the required future data is
+missing. Stage 3 drops those rows.</p></div>
 
 <h2 id="stage3"><span class="sec-no">05</span>Stage 3 &mdash; building the feature table</h2>
 
-<p>Stage 3 joins three sources into one table with one row per trading day: the
-variance columns from stage 2, four option-implied columns, and the VIX index.
-The result is <code>data/processed/SPY_features.parquet</code>.</p>
+<p>Stage 3 joins three sources into one row per trading day: stage-2 variance
+columns, four option-implied columns, and the VIX index. It writes
+<code>data/processed/SPY_features.parquet</code>.</p>
 
 <h3><code>build_option_features</code> &mdash; reading the option market</h3>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>Option prices contain the market's own forecast of future volatility. For each
-day, this picks three readings out of thousands of option contracts: how volatile
-the market expects things to be, how much more it charges for downside protection
-than upside, and whether it expects more volatility soon or later.</p></div>
+<p>Option prices contain the market's forecast of future volatility. For each day,
+the code selects three readings from thousands of contracts: expected volatility,
+the extra price of downside protection, and the difference between near- and
+later-dated volatility.</p></div>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> an option chain table with columns <code>trade_date</code>,
+<p><b>Input:</b> an option-chain table with <code>trade_date</code>,
 <code>expiry_date</code>, <code>option_type</code>, <code>delta</code>,
-<code>bid_iv</code>, <code>ask_iv</code>. <b>Output:</b> one row per trade date
-with <code>atm_iv</code>, <code>iv_skew</code>, <code>iv_term_slope</code>.
-<b>Role:</b> three of the fourteen model predictors.</p></div>
+<code>bid_iv</code>, and <code>ask_iv</code>. <b>Output:</b> one row per trade
+date with <code>atm_iv</code>, <code>iv_skew</code>, and
+<code>iv_term_slope</code>. <b>Role:</b> three of the fourteen model inputs.</p></div>
 
 <div class="box def"><span class="k">The three readings</span>
 <p>$$\mathrm{atm\_iv}_t=\frac{\mathrm{bid\_iv}+\mathrm{ask\_iv}}{2}\ \text{ for the call with }
 \arg\min_k\left|\delta_k-0.50\right|$$</p>
 <p>$$\mathrm{iv\_skew}_t=\sigma^{\text{put}}_{\delta=-0.25}-\sigma^{\text{call}}_{\delta=+0.25}$$</p>
 <p>$$\mathrm{iv\_term\_slope}_t=\sigma^{\text{atm}}_{\text{second expiry}}-\sigma^{\text{atm}}_{\text{front expiry}}$$</p>
-<p class="fnote">$\sigma$ is implied volatility, the volatility figure that makes
-an option pricing model reproduce the quoted price; it is quoted as an annual
-fraction, so 0.165 means 16.5 per cent a year. $\delta_k$ is contract $k$'s
-delta, how much the option price moves per dollar of underlying move; a call
-with $\delta=0.50$ is roughly at-the-money. "Front expiry" is the nearest expiry
-date that survives the days-to-expiry filter, and "second expiry" the next one
-after it. All three use the midpoint of the bid and ask implied volatility, so a
-wide quote does not bias the reading up or down.</p></div>
+<p class="fnote">$\sigma$ is implied volatility: the annual volatility that makes
+an option-pricing model match the quoted price. Thus 0.165 means 16.5 per cent a
+year. $\delta_k$ is contract $k$'s delta, the change in option price per dollar
+of underlying-price change; a call with $\delta=0.50$ is roughly at-the-money.
+"Front expiry" is the nearest date that passes the days-to-expiry filter;
+"second expiry" is the next one. All three readings use the bid-ask midpoint, so
+a wide quote does not push them up or down.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io">
@@ -607,8 +591,7 @@ bid_iv 0.1649  ask_iv 0.1658</pre></div>
 <pre>trade_date  2022-12-01
 atm_iv       0.16535   &lt;- (0.1649 + 0.1658) / 2</pre></div>
 </div>
-<p>Note that no contract sits exactly at delta 0.50; the code takes the nearest,
-here 0.5173.</p></div>
+<p>No contract has delta 0.50, so the code takes the nearest one: 0.5173.</p></div>
 
 <h3>The timing rules &mdash; where look-ahead is prevented</h3>
 
@@ -621,9 +604,8 @@ here 0.5173.</p></div>
     return lagged_df</pre>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>An option chain observed on Monday is stamped as Tuesday's information. That
-way, when a model looks at Tuesday's row, everything on it was already knowable
-before Tuesday started.</p></div>
+<p>An option chain observed on Monday is assigned to Tuesday. When the model uses
+Tuesday's row, the information was available before Tuesday began.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io">
@@ -639,58 +621,53 @@ before Tuesday started.</p></div>
 2022-11-03  0.25695  0.00650  25.86
 2022-11-04  0.28525  0.00975  25.30</pre></div>
 </div>
-<p>Every option and VIX value has moved down exactly one row. The feature table
-runs from 2022-11-02 to 2024-12-20 and holds <b>537 rows</b> after 27 rows were
-dropped for missing values.</p></div>
+<p>Each option and VIX value moves down exactly one row. After 27 rows are
+dropped for missing values, the feature table runs from 2022-11-02 to
+2024-12-20 and has <b>537 rows</b>.</p></div>
 
 <div class="box def"><span class="k">The IV-RV spread</span>
 <p>$$\mathrm{iv\_rv\_spread}_t=\mathrm{atm\_iv}_t-\sqrt{252\,x^{(w)}_t}$$</p>
-<p class="fnote">$x^{(w)}_t$ is the weekly average realised variance from stage 2,
-a daily variance. Multiplying by 252 trading days converts it to an annual
-variance, and the square root turns it into an annual volatility, so it can be
-subtracted from <code>atm_iv</code>, which is already annual. A positive spread
-means options are priced above what recent realised movement alone would
-justify. Hand check on the first row: $0.27515-\sqrt{252\times0.000209}=0.27515-0.229757=0.045393$,
-matching the stored value 0.045393163676948844 exactly.</p></div>
+<p class="fnote">$x^{(w)}_t$ is the daily variance from the five-day average in
+stage 2. Multiplying by 252 trading days annualises the variance; taking the
+square root gives annual volatility, which can be compared with annual
+<code>atm_iv</code>. A positive spread means options are priced above recent
+realised movement. On the first row,
+$0.27515-\sqrt{252\times0.000209}=0.27515-0.229757=0.045393$, matching the
+stored value 0.045393163676948844.</p></div>
 
 <div class="box why"><span class="k">Why business-day shift and forward filling are both needed</span>
-<p><code>BDay(1)</code> moves a Friday chain to Monday, but it does not know
-about market holidays. If that Monday is a holiday, no feature row exists to
-receive the value, and Tuesday's row is left empty. The
-<code>ffill(limit=3)</code> that follows carries the most recent available
-reading forward across up to three such gaps. The direction only ever goes
-forward in time, so a gap makes a feature <i>staler</i>, never fresher &mdash; it
-cannot create look-ahead.</p></div>
+<p><code>BDay(1)</code> moves a Friday chain to Monday but does not know market
+holidays. If Monday is a holiday, Tuesday's row is empty. The following
+<code>ffill(limit=3)</code> carries the latest reading across up to three gaps.
+Because it only moves information forward, it makes a value <i>staler</i>, not
+fresher; it cannot use future information.</p></div>
 
 <div class="box warn"><span class="k">Trap: the spread is filled, not recomputed</span>
-<p><code>iv_rv_spread</code> is computed before the forward fill, and then
-appears in the list of columns that get forward filled. So on a gap day the
-filled spread is yesterday's whole spread, which pairs yesterday's
-<code>atm_iv</code> with <i>yesterday's</i> weekly realised variance, not
-today's. It is stale in a slightly different way from the columns beside it.
-Harmless for leakage, but worth knowing if the number ever looks odd.</p></div>
+<p><code>iv_rv_spread</code> is computed before the forward fill and is then
+forward-filled itself. On a gap day, the value is yesterday's complete spread:
+yesterday's <code>atm_iv</code> paired with <i>yesterday's</i> weekly realised
+variance. It is stale in a different way from the neighbouring columns. This
+does not create leakage, but it explains an unexpected value.</p></div>
 
 <h2 id="models"><span class="sec-no">06</span>The five models and their formulas</h2>
 
-<p>All five sit behind the same two-method interface declared in
-<code>models/base.py</code>: <code>fit(X, y)</code> then
-<code>predict(X)</code>. Every one clips its output at
-<code>MIN_POSITIVE_VARIANCE = 1e-10</code>, because a variance forecast of zero
-or below would make the QLIKE score undefined.</p>
+<p>All five use the same two-method interface from <code>models/base.py</code>:
+<code>fit(X, y)</code> followed by <code>predict(X)</code>. Each clips its output
+at <code>MIN_POSITIVE_VARIANCE = 1e-10</code>, because QLIKE is undefined for a
+zero or negative variance forecast.</p>
 
 <h3>HAR-RV &mdash; the academic benchmark</h3>
 
 <div class="box def"><span class="k">The formula</span>
 <p>$$\widehat{y}_{t}= \beta_0+\beta_d\,x^{(d)}_t+\beta_w\,x^{(w)}_t+\beta_m\,x^{(m)}_t$$</p>
 <p class="fnote">$\widehat{y}_t$ is the forecast variance for row $t$.
-$x^{(d)}_t$, $x^{(w)}_t$, $x^{(m)}_t$ are the daily, weekly and monthly lagged
-realised variance from stage 2. $\beta_0$ is the intercept and $\beta_d$,
-$\beta_w$, $\beta_m$ are slopes, all four fitted by ordinary least squares,
-which chooses them to minimise $\sum_t (y_t-\widehat{y}_t)^2$ over the training
-rows. HAR stands for Heterogeneous Autoregressive: the idea is that traders with
-daily, weekly and monthly horizons each contribute to tomorrow's volatility.
+$x^{(d)}_t$, $x^{(w)}_t$, and $x^{(m)}_t$ are the daily, weekly, and monthly
+lagged realised variances from stage 2. $\beta_0$ is the intercept; $\beta_d$,
+$\beta_w$, and $\beta_m$ are slopes. Ordinary least squares fits all four by
+minimising $\sum_t (y_t-\widehat{y}_t)^2$ on the training rows. HAR means
+Heterogeneous Autoregressive: it combines daily, weekly, and monthly histories.
 The code uses only the three <code>rv_cc</code> columns
-(<code>HAR_FEATURES</code>), ignoring the other eleven predictors.</p></div>
+(<code>HAR_FEATURES</code>), not the other eleven predictors.</p></div>
 
 <h3>GARCH(1,1) &mdash; the volatility-clustering benchmark</h3>
 
@@ -716,22 +693,21 @@ The code uses only the three <code>rv_cc</code> columns
 <p>$$h_{t+k}=\omega+\phi\,h_{t+k-1},\qquad k=2,\dots,H$$</p>
 <p>And the forecast the code returns, matching the averaged target:</p>
 <p>$$\widehat{y}_{t}=\frac{1}{H}\sum_{k=1}^{H}h_{t+k}$$</p>
-<p class="fnote">$h_{t}$ is the conditional variance of the return on day $t$,
-meaning the variance expected given everything known up to day $t-1$. $r_t$ is
-the daily log return on day $t$. $\omega$ is a constant floor, $\alpha$ is how
-strongly yesterday's shock raises today's variance, $\beta$ is how much of
-yesterday's variance carries over, and $\phi=\alpha+\beta$ is persistence, how
-slowly a volatility burst decays. $H$ is the forecast horizon, 1 or 5. GARCH
-stands for Generalized Autoregressive Conditional Heteroskedasticity;
-"heteroskedasticity" just means the variance is not constant over time.</p></div>
+<p class="fnote">$h_{t}$ is the conditional variance for day $t$: the variance
+expected from information available through day $t-1$. $r_t$ is that day's log
+return on day $t$. $\omega$ is a constant floor, $\alpha$ controls the effect of the
+latest return shock, $\beta$ controls how much prior variance carries over, and
+$\phi=\alpha+\beta$ is persistence, or how slowly a volatility burst fades.
+$H$ is the forecast horizon, 1 or 5. GARCH means Generalized Autoregressive
+Conditional Heteroskedasticity; heteroskedasticity means that variance changes
+over time.</p></div>
 
 <div class="box why"><span class="k">Why the code multiplies returns by 100 and then divides by 10,000</span>
 <p><code>fit</code> passes <code>returns * 100</code> to the <code>arch</code>
-library. Optimisers converge badly when the numbers they are fitting are around
-0.01; scaling to percentage points puts them around 1. Variance scales with the
-square of the input, so every variance coming back out is divided by
-$100^2=10{,}000$ to return to decimal units. Get one of those two conversions
-wrong and GARCH's forecasts are off by a factor of ten thousand.</p></div>
+library. Optimisers behave poorly when inputs are around 0.01, so percentage
+points put them around 1. Variance scales with the square of the input; returned
+variances are divided by $100^2=10{,}000$ to restore decimal units. Missing either
+conversion makes the forecasts wrong by a factor of ten thousand.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io">
@@ -746,17 +722,16 @@ persistence  0.973339
 implied long-run variance
        0.0000558</pre></div>
 </div>
-<p>With $\alpha$ fitted at exactly zero, this GARCH has no reaction to individual
-return shocks left. Its forecasts drift very slowly toward the long-run level:
-over the first eight forecast days they move only from 0.00005604 to 0.00005600.
-Every one of the 286 forecasts is technically distinct, but the whole path spans
-almost no range. See the <a href="#limits">limitations</a> section.</p></div>
+<p>With $\alpha$ exactly zero, this GARCH does not react to individual return
+shocks. Its forecasts move slowly toward the long-run level: over the first
+eight days they move from 0.00005604 to 0.00005600. All 286 forecasts are
+technically distinct, but their range is tiny. See <a href="#limits">limitations</a>.</p></div>
 
 <h3>Ridge and Lasso &mdash; penalised linear models in log space</h3>
 
 <div class="box def"><span class="k">The formula</span>
-<p>Both fit a straight line to the <i>logarithm</i> of variance, over all
-fourteen predictors after each has been standardised:</p>
+<p>Both fit a straight line to the <i>logarithm</i> of variance using all
+fourteen predictors after standardising each one:</p>
 <p>$$\log y_t \approx \gamma_0+\sum_{j=1}^{14}\gamma_j z_{j,t},
 \qquad z_{j,t}=\frac{x_{j,t}-\bar{x}_j}{s_j}$$</p>
 <p>Ridge chooses the coefficients by minimising</p>
@@ -766,42 +741,39 @@ fourteen predictors after each has been standardised:</p>
 <p>and the prediction is mapped back with</p>
 <p>$$\widehat{y}_t=\max\left(e^{\widehat{\log y_t}},\,10^{-10}\right)$$</p>
 <p class="fnote">$x_{j,t}$ is predictor $j$ on row $t$; $\bar{x}_j$ and $s_j$ are
-its mean and standard deviation over the training rows, so $z_{j,t}$ is the
-standardised version. $\gamma_j$ are the fitted coefficients and $\gamma_0$ the
-intercept. $\lambda$ is the penalty strength, chosen automatically from 40
-candidate values by <code>RidgeCV</code> or <code>LassoCV</code> using
-<code>TimeSeriesSplit</code>, which only ever validates on data later than what
-it trained on. Squaring the coefficients shrinks them all; taking absolute
-values drives some to exactly zero, which is why Lasso also selects
-variables.</p></div>
+its training mean and standard deviation, so $z_{j,t}$ is the standardised
+value. $\gamma_j$ are the fitted coefficients and $\gamma_0$ is the intercept.
+$\lambda$ controls the penalty and is selected from 40 candidates by
+<code>RidgeCV</code> or <code>LassoCV</code> with <code>TimeSeriesSplit</code>.
+Validation always uses data later than the training data. The squared penalty
+shrinks coefficients; the absolute-value penalty can set some to zero, so Lasso
+also selects variables.</p></div>
 
 <div class="box warn"><span class="k">Trap: fitting in logs shifts what is being predicted</span>
-<p>Fitting $\log y$ and then taking $e^{\widehat{\log y}}$ does not give back an
-estimate of the average of $y$. It gives roughly the <i>median</i> of $y$, which
-for a right-skewed quantity like variance is lower than the mean. This is not an
-accident to be fixed &mdash; it is exactly why Ridge and Lasso top the QLIKE
-table and sit at the bottom of the MSE table. QLIKE rewards getting the typical
-day right; MSE is dominated by the few violent days these models under-forecast.
-Two scores, two different questions.</p></div>
+<p>Fitting $\log y$ and then taking $e^{\widehat{\log y}}$ does not estimate the
+average of $y$. It gives roughly the <i>median</i> of $y$, which is below the mean for a
+right-skewed quantity such as variance. That helps explain why Ridge and Lasso
+top the QLIKE table but sit at the bottom of the MSE table: QLIKE rewards a good
+typical-day forecast, while MSE is driven by the few turbulent days they
+under-forecast.</p></div>
 
 <h3>XGBoost &mdash; the nonlinear entry</h3>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> all fourteen predictors, unscaled and untransformed.
-<b>Output:</b> a variance forecast floored at $10^{-10}$. <b>Role:</b> the
-gradient-boosted decision tree entry, meant to catch relationships a straight
-line cannot. Its settings are fixed in the source: 200 trees, maximum depth 4,
-learning rate 0.05, and at least 10 rows per leaf.</p></div>
+<p><b>Input:</b> all fourteen predictors, without scaling or transformation.
+<b>Output:</b> a variance forecast floored at $10^{-10}$. <b>Role:</b> a
+gradient-boosted decision-tree model that can capture relationships a straight
+line cannot. Its source settings are fixed: 200 trees, maximum depth 4, learning
+rate 0.05, and at least 10 rows per leaf.</p></div>
 
 <div class="box flag"><span class="k">It does not do what it appears to do</span>
-<p>On this data XGBoost builds <b>no splits at all</b>. See the
-<a href="#limits">limitations</a> section for the measurements.</p></div>
+<p>On this data XGBoost builds <b>no splits at all</b>. The
+<a href="#limits">limitations</a> section shows the measurements.</p></div>
 
 <h2 id="stage4"><span class="sec-no">07</span>Stage 4 &mdash; walk-forward evaluation</h2>
 
-<p>This is the function that decides whether the whole benchmark is honest. It
-walks forward through time: train on the past, forecast the next block, move the
-boundary, repeat.</p>
+<p>This function controls the benchmark's timing. It moves forward through time:
+train on the past, forecast the next block, move the boundary, and repeat.</p>
 
 <pre>    <span class="c"># The target for feature row i averages realised variance over the horizon</span>
     <span class="c"># trading days after i. Rows within horizon-1 of the first test date therefore</span>
@@ -819,35 +791,33 @@ boundary, repeat.</p>
         train_df = working_df.iloc[: retrain_idx - purged_train_rows]</pre>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>Hold back the first year. Fit every model on everything before the boundary,
-predict the next 21 trading days, then move the boundary 21 days forward and
-refit on the now-larger history. The training window only ever grows, and it
-never contains a day at or after the days being forecast.</p></div>
+<p>Hold back the first year. Fit on everything before the boundary, forecast the
+next 21 trading days, move the boundary 21 days forward, and refit on the larger
+history. The training window grows and never includes a forecast day.</p></div>
 
 <div class="box def"><span class="k">What it does</span>
 <p><b>Input:</b> the 537-row feature table, a symbol, a horizon, and the config.
-<b>Output:</b> a long table with one row per date, per model, holding
-<code>y_true</code> and <code>y_pred</code>. <b>Role:</b> everything downstream
-&mdash; scores, statistical tests, diagnostics &mdash; reads only this table.</p></div>
+<b>Output:</b> a long table with one row per date and model containing
+<code>y_true</code> and <code>y_pred</code>. <b>Role:</b> all later scores, tests,
+and diagnostics read this table.</p></div>
 
 <div class="box def"><span class="k">The purge, stated precisely</span>
-<p>Training row $i$ carries the target $y_{i,H}=\frac{1}{H}\sum_{j=1}^{H}RV_{i+j}$,
-which is only fully known on day $i+H$. Let $T$ be the first forecast date. A
-training row is safe only when its label was already complete by $T$:</p>
+<p>Training row $i$ carries $y_{i,H}=\frac{1}{H}\sum_{j=1}^{H}RV_{i+j}$, which
+is complete on day $i+H$. Let $T$ be the first forecast date. A training row is
+safe only if its label was complete by $T$:</p>
 <p>$$i+H\le T \iff i\le T-H$$</p>
-<p>so rows $T-H+1,\dots,T-1$ must be removed &mdash; exactly $H-1$ rows.</p>
-<p class="fnote">$H$ is the horizon in trading days, 1 or 5. $T$ is the index of
-the first row in the test block. For $H=1$ the count is zero and nothing is
-dropped. For $H=5$, four rows are dropped from the end of every training window.
-Without this, the five-day model would be fitted on labels containing realised
-variance from days it is about to be asked to forecast.</p></div>
+<p>Therefore rows $T-H+1,\dots,T-1$ must be removed: exactly $H-1$ rows.</p>
+<p class="fnote">$H$ is the trading-day horizon, 1 or 5. $T$ is the index of the
+first test row. For $H=1$, nothing is removed. For $H=5$, four rows are removed
+from every training window. Otherwise, five-day labels would contain realised
+variance from days the model is about to forecast.</p></div>
 
 <div class="box why"><span class="k">Why the minimum training size adds the purged rows back</span>
-<p><code>MIN_TRAIN_OBS + purged_train_rows</code> rather than plain
-<code>MIN_TRAIN_OBS</code>. The constant is meant to guarantee at least 25 rows
-actually reaching the model. Since $H-1$ rows are removed after the boundary is
-chosen, the boundary has to sit $H-1$ rows later to leave 25 behind. It also
-keeps <code>retrain_idx - purged_train_rows</code> from ever going negative.</p></div>
+<p>The code uses <code>MIN_TRAIN_OBS + purged_train_rows</code>, not just
+<code>MIN_TRAIN_OBS</code>, so 25 rows reach the model after the purge. Since
+$H-1$ rows are removed after the boundary is chosen, the boundary must sit
+$H-1$ rows later to leave 25 behind. It also keeps
+<code>retrain_idx - purged_train_rows</code> positive.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
@@ -860,21 +830,18 @@ first test date             2023-11-02
 retrain points (14 total)   251, 272, 293, 314, 335, ... 503, 524
 out-of-sample rows          537 - 251 = 286</pre></div>
 </div>
-<p>For horizon 1, the first model is fitted on rows 0 to 250 and forecasts rows
-251 to 271. For horizon 5, the same block is fitted on rows 0 to 246 &mdash; four
-rows shorter &mdash; and forecasts the same 21 dates. Every model produces 286
-forecasts at each horizon, so <code>forecasts.parquet</code> holds
-$5\times2\times286=2{,}860$ rows.</p></div>
+<p>At horizon 1, the first model uses rows 0 to 250 and forecasts rows 251 to
+271. At horizon 5, it uses rows 0 to 246&mdash;four rows fewer&mdash;and forecasts
+the same 21 dates. Each model produces 286 forecasts at each horizon, so
+<code>forecasts.parquet</code> has $5\times2\times286=2{,}860$ rows.</p></div>
 
 <div class="box warn"><span class="k">Trap: a failing model becomes a silent row of NaN</span>
-<p>The fit and predict call is wrapped in <code>except Exception</code>. A model
-that throws is logged at warning level and its whole forecast block is filled
-with <code>NaN</code>. Nothing crashes. If you are reading only the scoreboard,
-a model that failed on some blocks looks identical to one that succeeded, just
-with fewer scored observations &mdash; and <code>compute_scores</code> silently
-skips any model with fewer than 10 valid rows, so a fully broken model vanishes
-from the table entirely rather than appearing as a failure. Always read the
-<code>n_obs</code> column, and check the log.</p></div>
+<p><code>except Exception</code> catches errors from fit and predict. The error is
+logged at warning level and the block becomes <code>NaN</code>. A model that
+fails on some blocks therefore looks like a model with fewer observations, and
+<code>compute_scores</code> skips one with fewer than 10 valid rows. A fully
+broken model disappears from the scoreboard. Check <code>n_obs</code> and the
+log.</p></div>
 
 <h2 id="scoring"><span class="sec-no">08</span>Scoring &mdash; QLIKE, MSE, Diebold-Mariano</h2>
 
@@ -885,22 +852,19 @@ from the table entirely rather than appearing as a failure. Always read the
 <p>$$\text{MSE}=\frac{1}{n}\sum_{t=1}^{n}\left(y_t-\widehat{y}_t\right)^{2}$$</p>
 <p>Quasi-likelihood loss, from <code>qlike_loss</code>:</p>
 <p>$$\text{QLIKE}=\frac{1}{n}\sum_{t=1}^{n}\left[\log\widehat{y}_t+\frac{y_t}{\widehat{y}_t}\right]$$</p>
-<p class="fnote">$y_t$ is the realised variance on scored date $t$ and
-$\widehat{y}_t$ the forecast, both strictly positive daily variances; $n$ is the
-number of scored dates, 286 here. Lower is better for both. Note what the code
-does <b>not</b> include: the textbook QLIKE usually carries a $-\log y_t - 1$
-term that makes its minimum zero. Those terms do not depend on the forecast, so
-dropping them does not change any ranking &mdash; but it does mean the printed
-QLIKE values are large negative numbers near $-8.8$ rather than small positive
-ones, and they are only comparable within this project.</p></div>
+<p class="fnote">$y_t$ is realised variance on scored date $t$ and
+$\widehat{y}_t$ is the forecast; both are strictly positive. $n$ is the number
+of scored dates, 286 here. Lower is better. The code does <b>not</b> include the
+textbook QLIKE terms $-\log y_t - 1$, which would make the minimum zero. They do not depend on
+the forecast, so rankings stay the same, but the printed QLIKE values near
+$-8.8$ are meaningful only within this project.</p></div>
 
 <div class="box why"><span class="k">Why QLIKE is the primary score for variance</span>
-<p>MSE works in squared variance units. Daily variance here is around
-$10^{-4}$, so squared errors are around $10^{-9}$, and the total is dominated
-almost entirely by a handful of turbulent days. QLIKE instead depends on the
-<i>ratio</i> $y_t/\widehat{y}_t$, so being twice too high on a calm day costs the
-same as being twice too high on a wild day. It also punishes under-forecasting
-harder than over-forecasting, which is the asymmetry a risk manager wants.</p></div>
+<p>Mean squared error (MSE) uses squared variance units. Here daily variance is
+around $10^{-4}$, so squared errors are around $10^{-9}$ and a few turbulent days
+dominate. Quasi-likelihood loss (QLIKE) uses the <i>ratio</i>
+$y_t/\widehat{y}_t$, so a forecast twice too high has the same ratio on a calm or
+volatile day. It also penalises under-forecasting more than over-forecasting.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io">
@@ -915,16 +879,16 @@ y_pred  0.00010789067915300896</pre></div>
 sum                  = -8.564241  &lt;- this one day
 mean over all 286    = -8.797168  &lt;- the scoreboard value</pre></div>
 </div>
-<p>The forecast was 1.75 times the realised value that day, so the model was too
-cautious. Averaged over 286 days, HAR-RV scores $-8.797168$, matching the
-<code>qlike</code> column in <code>scores.parquet</code> exactly.</p></div>
+<p>The forecast was 1.75 times the realised value, so the model was too high that
+day. Across 286 days, HAR-RV scores $-8.797168$, matching the
+<code>qlike</code> value in <code>scores.parquet</code>.</p></div>
 
 <h3><code>diebold_mariano_test</code> &mdash; is the gap real?</h3>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>Model A beat model B on average. But forecast errors wander together from day
-to day, so a run of luck can look like skill. This test asks whether the average
-gap is big compared to how much it bounces around.</p></div>
+<p>Model A beat model B on average. Forecast errors can still move together from
+day to day, so luck can look like skill. This test compares the average gap with
+the amount that gap varies.</p></div>
 
 <div class="box def"><span class="k">The formula the code implements</span>
 <p>Let $d_t=L^A_t-L^B_t$ be the difference in QLIKE loss on date $t$, and
@@ -935,27 +899,26 @@ autocovariances:</p>
 \qquad K=\max\left(1,\left\lfloor n^{1/3}\right\rfloor\right)$$</p>
 <p>$$\text{DM}=\frac{\bar{d}}{\sqrt{\widehat{V}/n}},\qquad
 p=2\left[1-\Phi(\left|\text{DM}\right|)\right]$$</p>
-<p class="fnote">$L^A_t$ and $L^B_t$ are the per-day QLIKE losses of the two
-models. $n$ is the number of common dates, 286 here. $\widehat{\gamma}_k$ is the
+<p class="fnote">$L^A_t$ and $L^B_t$ are the two models' daily QLIKE losses. $n$
+is the number of common dates, 286 here. $\widehat{\gamma}_k$ is the
 autocovariance of the loss difference at lag $k$: how much today's gap resembles
-the gap $k$ days ago. $K$ is the bandwidth, how many lags are counted; at $n=286$
-it evaluates to 6. The Bartlett weights $1-k/(K+1)$ taper smoothly to zero so
-that $\widehat{V}$ cannot come out negative. $\Phi$ is the standard normal
-cumulative distribution function. A positive DM statistic means model A had the
-<i>higher</i> average loss, so model A is the worse one.</p></div>
+the gap $k$ days earlier. $K$ is the number of included lags; at $n=286$ it is
+6. The Bartlett weights $1-k/(K+1)$ taper to zero, keeping $\widehat{V}$
+non-negative. $\Phi$ is the standard normal cumulative distribution function. A
+positive DM statistic means model A has the <i>higher</i> average loss and is
+therefore worse.</p></div>
 
 <div class="box why"><span class="k">Why the autocovariance terms are needed at all</span>
-<p>If losses were independent day to day, $\widehat{\gamma}_0/n$ would be the
-right variance. They are not: volatility comes in clusters, so a model that is
-too low today is usually too low tomorrow. Ignoring that would make the standard
-error too small and every p-value too impressive. The Bartlett-weighted sum is
-the standard correction.</p></div>
+<p>If daily losses were independent, $\widehat{\gamma}_0/n$ would be enough. They
+are not: volatility clusters, so a model that is too low today is often too low
+tomorrow. Ignoring this would understate the standard error and make p-values
+too small. The Bartlett-weighted sum corrects for that dependence.</p></div>
 
 <h2 id="results"><span class="sec-no">09</span>What the code actually produced</h2>
 
-<p>Everything below is the output of
+<p>The sections below show output from
 <code>uv run python -m volcast.pipeline.run_pipeline</code> on 2026-08-10, after
-the fixes in section 14. The whole pipeline ran in about 11 seconds.</p>
+the fixes in section 14. The pipeline took about 11 seconds.</p>
 
 <h4>scores.parquet</h4>
 <div class="scroll">
@@ -975,10 +938,9 @@ the fixes in section 14. The whole pipeline ran in about 11 seconds.</p>
 </tbody>
 </table>
 </div>
-<p class="fnote">Read the two score columns against each other. Lasso wins QLIKE
-at both horizons and loses MSE at both. HAR-RV is third on QLIKE but best on MSE
-at horizon 1. Neither column alone settles which model is better; they answer
-different questions, as the loss definitions above show.</p>
+<p class="fnote">Lasso wins QLIKE at both horizons and loses MSE at both. HAR-RV is
+third on QLIKE but best on MSE at horizon 1. Neither score alone decides which
+model is better; they measure different things.</p>
 
 <h4>model_diagnostics.parquet, horizon 1</h4>
 <div class="scroll">
@@ -993,10 +955,10 @@ different questions, as the loss definitions above show.</p>
 </tbody>
 </table>
 </div>
-<p class="fnote">No model ever hit the $10^{-10}$ floor, so the clipping never
-bound. The min-to-max spread is the tell: Ridge and Lasso range over a factor of
-39, HAR-RV a factor of 7, and XGBoost a factor of 1.3. A forecaster whose output
-barely moves is not forecasting.</p>
+<p class="fnote">No model hit the $10^{-10}$ floor, so clipping never bound. The
+minimum-to-maximum range is informative: Ridge and Lasso span a factor of 39,
+HAR-RV a factor of 7, and XGBoost a factor of 1.3. XGBoost's forecasts barely
+change.</p>
 
 <h4>dm_tests.parquet, horizon 1</h4>
 <div class="scroll">
@@ -1016,10 +978,9 @@ barely moves is not forecasting.</p>
 </tbody>
 </table>
 </div>
-<p class="fnote">Only three comparisons clear a 5 per cent threshold, and all
-three are against XGBoost. Ridge against Lasso gives $p=0.89$ &mdash; those two
-are indistinguishable. GARCH against HAR-RV gives $p=0.35$. The honest reading of
-286 days is that most of these models cannot be told apart.</p>
+<p class="fnote">Only three comparisons clear the 5 per cent threshold, and all are
+against XGBoost. Ridge versus Lasso gives $p=0.89$; GARCH versus HAR-RV gives
+$p=0.35$. With 286 days, most models cannot be distinguished.</p>
 
 <h2 id="callgraph"><span class="sec-no">10</span>Call graph</h2>
 
@@ -1062,9 +1023,8 @@ are indistinguishable. GARCH against HAR-RV gives $p=0.35$. The honest reading o
         └── compute_model_diagnostics()
             └── _qlike_summary()</pre>
 
-<p class="fnote">The deepest loop is
-<code>walk_forward_evaluate</code>: 2 horizons times 14 retrain points times 5
-models equals 140 model fits per run.</p>
+<p class="fnote"><code>walk_forward_evaluate</code> contains the deepest loop:
+2 horizons times 14 retrain points times 5 models equals 140 fits per run.</p>
 
 <h2 id="edges"><span class="sec-no">11</span>Edge cases</h2>
 
@@ -1072,18 +1032,18 @@ models equals 140 model fits per run.</p>
 <table>
 <thead><tr><th>Situation</th><th>What would go wrong</th><th>What handles it</th></tr></thead>
 <tbody>
-<tr><td>A half trading day, or a data outage</td><td>A day with 30 minute bars would produce a tiny realised variance that looks like a calm day</td><td><code>compute_daily_rv</code> drops any day with fewer than <code>min_minutes_per_day</code> bars</td></tr>
-<tr><td>A day with only one minute bar</td><td><code>np.diff</code> on one element returns an empty array; the sum of nothing is ambiguous</td><td><code>close_to_close_rv</code> returns 0.0 when <code>closes.size &lt; 2</code></td></tr>
-<tr><td>A perfectly flat day, high equals low</td><td><code>log(H/L)</code> is <code>log(1)=0</code>, which is fine, but the guard makes it explicit</td><td>Both range estimators return 0.0 early</td></tr>
-<tr><td>A market holiday breaks the business-day lag</td><td>The option feature lands on a non-trading date and never joins</td><td>The left join leaves <code>NaN</code>, then <code>ffill(limit=3)</code> carries the last real reading forward</td></tr>
-<tr><td>A gap longer than three days</td><td>A very stale implied volatility would be presented as current</td><td>The fill limit stops, the row keeps <code>NaN</code>, and <code>dropna</code> removes it. 27 of 564 rows went this way.</td></tr>
-<tr><td>The last rows of the file have no future</td><td>Targets would be <code>NaN</code> and models would train on missing labels</td><td><code>dropna(subset=FEATURE_COLS + TARGET_COLS)</code> in stage 3</td></tr>
-<tr><td>The requested training window exceeds the data</td><td>Empty score files that look like a completed benchmark</td><td><code>InsufficientTrainingHistoryError</code>, naming the row count, date range, and the cutoff it needed</td></tr>
-<tr><td>Fewer than 25 usable training rows</td><td>A regression on a handful of rows, or a negative slice index after the purge</td><td><code>max(train_end_idx, MIN_TRAIN_OBS + purged_train_rows)</code></td></tr>
-<tr><td>Cross-validation asked for more folds than rows</td><td><code>TimeSeriesSplit</code> raises</td><td><code>_time_series_split_or_none</code> shrinks the fold count, and falls back to a fixed penalty below two folds</td></tr>
-<tr><td>A model fails on every single block</td><td>Its <code>y_pred</code> column vanishes from the pivot and naming it raised <code>KeyError</code></td><td>Fixed &mdash; the model list is now read off the pivot. See <a href="#fixes">Fixes applied</a>.</td></tr>
-<tr><td>A model's forecast is zero or negative</td><td><code>log(0)</code> is undefined and QLIKE explodes</td><td>Every model clips at $10^{-10}$; <code>compute_scores</code> additionally drops non-positive rows</td></tr>
-<tr><td>Fewer than 30 common dates for a pair</td><td>A Diebold-Mariano p-value from a large-sample formula on a tiny sample</td><td><code>MIN_OBS_FOR_DM</code> skips the comparison entirely</td></tr>
+<tr><td>A half trading day, or a data outage</td><td>30 minute bars would make the day look unusually calm</td><td><code>compute_daily_rv</code> drops days with fewer than <code>min_minutes_per_day</code> bars</td></tr>
+<tr><td>A day with only one minute bar</td><td><code>np.diff</code> returns an empty array</td><td><code>close_to_close_rv</code> returns 0.0 when <code>closes.size &lt; 2</code></td></tr>
+<tr><td>A perfectly flat day, high equals low</td><td><code>log(H/L)</code> is <code>log(1)=0</code></td><td>Both range estimators return 0.0 early</td></tr>
+<tr><td>A market holiday breaks the business-day lag</td><td>The option feature lands on a non-trading date and does not join</td><td>The left join leaves <code>NaN</code>; <code>ffill(limit=3)</code> carries the last real reading forward</td></tr>
+<tr><td>A gap longer than three days</td><td>A stale implied-volatility value would look current</td><td>The fill stops, the row keeps <code>NaN</code>, and <code>dropna</code> removes it. 27 of 564 rows went this way.</td></tr>
+<tr><td>The last rows of the file have no future</td><td>Targets would be <code>NaN</code></td><td><code>dropna(subset=FEATURE_COLS + TARGET_COLS)</code> in stage 3</td></tr>
+<tr><td>The requested training window exceeds the data</td><td>Empty score files would look complete</td><td><code>InsufficientTrainingHistoryError</code> names the row count, dates, and required cutoff</td></tr>
+<tr><td>Fewer than 25 usable training rows</td><td>A regression would use too little data, or the purge could make the slice negative</td><td><code>max(train_end_idx, MIN_TRAIN_OBS + purged_train_rows)</code></td></tr>
+<tr><td>Cross-validation asked for more folds than rows</td><td><code>TimeSeriesSplit</code> raises</td><td><code>_time_series_split_or_none</code> reduces the fold count and uses a fixed penalty below two folds</td></tr>
+<tr><td>A model fails on every single block</td><td>Its <code>y_pred</code> column disappears from the pivot and a lookup raises <code>KeyError</code></td><td>Fixed: the model list now comes from the pivot. See <a href="#fixes">Fixes applied</a>.</td></tr>
+<tr><td>A model's forecast is zero or negative</td><td><code>log(0)</code> is undefined</td><td>Every model clips at $10^{-10}$; <code>compute_scores</code> also drops non-positive rows</td></tr>
+<tr><td>Fewer than 30 common dates for a pair</td><td>A large-sample Diebold-Mariano p-value would use too little data</td><td><code>MIN_OBS_FOR_DM</code> skips the comparison</td></tr>
 </tbody>
 </table>
 </div>
@@ -1094,15 +1054,15 @@ models equals 140 model fits per run.</p>
 <table>
 <thead><tr><th>Idiom</th><th>What it does</th><th>The trap</th></tr></thead>
 <tbody>
-<tr><td><code>.shift(1)</code> before <code>.rolling()</code></td><td>Averages the previous $k$ days, excluding today</td><td>Do it the other way round and today's value enters its own predictor. That is the classic look-ahead bug, and here it would make every model look brilliant.</td></tr>
-<tr><td><code>.shift(-1)</code></td><td>Pulls a future value onto the current row</td><td>Legitimate only for building a <i>target</i>. The same call on a predictor is leakage.</td></tr>
-<tr><td><code>min_periods=lag_window</code></td><td>Refuses to compute an average until the full window exists</td><td>Without it, pandas happily averages 3 days and calls it a 22-day mean, quietly changing what the feature means for the first 21 rows.</td></tr>
-<tr><td><code>pd.offsets.BDay(1)</code></td><td>Moves a date one business day forward</td><td>Knows about weekends, not about market holidays. Only safe here because a mismatch produces a missing row, never a wrong one.</td></tr>
-<tr><td><code>working_df.iloc[: retrain_idx - purged_train_rows]</code></td><td>Positional slice for the training window</td><td>If the subtraction ever went negative, this would silently return a slice counted from the end of the frame instead of raising. The minimum-observation guard is what keeps it positive.</td></tr>
-<tr><td><code>state_predictions[-len(test_df):]</code></td><td>Keeps only the tail of a longer prediction run</td><td>Depends on the warm-up frame ending exactly where the test block ends. Both are sliced to the same <code>test_end</code>.</td></tr>
-<tr><td><code>except Exception</code> around fit and predict</td><td>Keeps one broken model from killing the whole run</td><td>Turns a hard failure into a quiet row of <code>NaN</code>. It does log a warning, but nothing in the output files says a model failed.</td></tr>
-<tr><td><code>groupby(["symbol","horizon","model"])</code></td><td>Splits the forecast table into scoring groups</td><td>Groups on the model's <i>display</i> name, so two registry keys sharing a <code>name</code> attribute would silently merge into one scoreboard row.</td></tr>
-<tr><td><code>MIN_POSITIVE_VARIANCE = 1e-10</code></td><td>The floor under every forecast</td><td>Declared separately in four model files, and compared against a fifth constant, <code>PREDICTION_FLOOR_TOLERANCE = 1.0000001e-10</code>, in the diagnostics. Changing one and not the others would make the floor-hit counter silently wrong.</td></tr>
+<tr><td><code>.shift(1)</code> before <code>.rolling()</code></td><td>Averages the previous $k$ days, excluding today</td><td>Reverse the order and today's value enters its own predictor. That look-ahead bug would make every model look better than it is.</td></tr>
+<tr><td><code>.shift(-1)</code></td><td>Moves a future value onto the current row</td><td>Valid for building a <i>target</i> only. Using it on a predictor is leakage: future information entering the past.</td></tr>
+<tr><td><code>min_periods=lag_window</code></td><td>Waits for the full window before averaging</td><td>Without it, pandas averages 3 days and labels the result a 22-day mean for the first 21 rows.</td></tr>
+<tr><td><code>pd.offsets.BDay(1)</code></td><td>Moves a date one business day forward</td><td>It knows weekends, not market holidays. A mismatch is safe here because it creates a missing row, not a wrong value.</td></tr>
+<tr><td><code>working_df.iloc[: retrain_idx - purged_train_rows]</code></td><td>Positional training-window slice</td><td>A negative end index would count backward from the frame's end. The minimum-observation guard keeps it positive.</td></tr>
+<tr><td><code>state_predictions[-len(test_df):]</code></td><td>Keeps the tail of a longer prediction run</td><td>The warm-up frame must end with the test block. Both are sliced to the same <code>test_end</code>.</td></tr>
+<tr><td><code>except Exception</code> around fit and predict</td><td>Stops one broken model from ending the run</td><td>It turns an error into <code>NaN</code> forecasts. A warning is logged, but output files do not identify the failure.</td></tr>
+<tr><td><code>groupby(["symbol","horizon","model"])</code></td><td>Splits forecasts into scoring groups</td><td>It groups by the model's <i>display</i> name. Two registry keys with the same <code>name</code> would merge into one scoreboard row.</td></tr>
+<tr><td><code>MIN_POSITIVE_VARIANCE = 1e-10</code></td><td>Sets the forecast floor</td><td>It is declared in four model files and compared with <code>PREDICTION_FLOOR_TOLERANCE = 1.0000001e-10</code> in diagnostics. Changing one without the others would corrupt the floor-hit count.</td></tr>
 </tbody>
 </table>
 </div>
@@ -1110,97 +1070,86 @@ models equals 140 model fits per run.</p>
 <h2 id="limits"><span class="sec-no">13</span>Honest limitations</h2>
 
 <div class="box flag"><span class="k">XGBoost is not really in the contest</span>
-<p>On this data, XGBoost fits <b>zero splits</b>. Measured directly on the first
-training block: all fourteen feature importances come back as 0.0, and the model
-returns a single constant, 0.00010017, for all 21 test rows &mdash; which is
-essentially the training target mean of 0.00009958. Across all 286 forecast
-dates there are only 14 distinct predictions, one per retrain block.</p>
-<p>The cause is the scale of the target. Daily variance is around $10^{-4}$, so
-the split gains XGBoost computes fall below the threshold at which it will grow a
-tree. Re-running the identical model with the target multiplied by 100 or more
-makes it use all fourteen features and produce 20 distinct predictions per
-block:</p>
+<p>On this data, XGBoost fits <b>zero splits</b>. In the first training block, all
+fourteen feature importances are 0.0, and the model returns 0.00010017 for all
+21 test rows&mdash;almost the training-target mean of 0.00009958. Across 286
+forecast dates, there are only 14 distinct predictions, one per retrain block.</p>
+<p>The target is too small. Daily variance is around $10^{-4}$, so XGBoost's split
+gains fall below the threshold for growing a tree. Multiplying the target by 100
+or more makes the same model use all fourteen features and produce 20 distinct
+predictions per block:</p>
 <pre>target scale    1e+00: unique preds  1/21, features used  0/14, pred std 0.000e+00
 target scale    1e+02: unique preds 20/21, features used 14/14, pred std 1.241e-05
 target scale    1e+04: unique preds 20/21, features used 14/14, pred std 1.234e-05
 target scale    1e+06: unique preds 20/21, features used 14/14, pred std 1.234e-05</pre>
-<p>This matters for how the results are read. "XGBoost is significantly worse
-than HAR-RV, Ridge and Lasso at $p&lt;0.0001$" is not a finding about gradient
-boosting. It is the finding that those three models beat a constant. This was
-left unchanged rather than silently fixed, because scaling or log-transforming
-the target is a modelling decision that changes the benchmark's headline result,
-and that is the owner's call. The one-line change would be to give
-<code>XGBoostModel</code> the same log-target transform that
-<code>RidgeModel</code> and <code>LassoModel</code> already use.</p></div>
+<p>Read the result carefully. "XGBoost is significantly worse than HAR-RV, Ridge
+and Lasso at $p&lt;0.0001$" does not show that gradient boosting is worse. It shows
+that those models beat a constant. The code leaves this unchanged because
+scaling or log-transforming the target would change the benchmark result. The
+one-line change would give <code>XGBoostModel</code> the log-target transform
+already used by <code>RidgeModel</code> and <code>LassoModel</code>.</p></div>
 
 <div class="box flag"><span class="k">GARCH fits alpha to zero and becomes nearly flat</span>
-<p>On the first training block the fitted parameters are $\omega=0.014878$,
-$\alpha=0.000000$, $\beta=0.973339$. With $\alpha=0$ the model has no reaction to
-individual return shocks left; it is a slowly decaying average with persistence
-0.973. Its forecasts over the first eight days move from 0.00005604 to
-0.00005600, and its full 286-day range is 0.000038 to 0.000134, against HAR-RV's
-0.000036 to 0.000249. This is what the optimiser chose on roughly one year of
-daily returns; it is a real result on this sample, not a coding error, but it
-means the GARCH column is closer to a slowly drifting constant than to the
-textbook volatility-clustering model.</p></div>
+<p>On the first training block, the fitted parameters are $\omega=0.014878$,
+$\alpha=0.000000$, and $\beta=0.973339$. With $\alpha=0$, the model does not
+react to individual return shocks; it is a slowly decaying average with
+persistence 0.973. Its first-eight-day forecasts move from 0.00005604 to
+0.00005600. Across 286 days, they range from 0.000038 to 0.000134, versus
+HAR-RV's 0.000036 to 0.000249. This is the optimiser's result on roughly one
+year of daily returns, not a coding error, but the GARCH forecast is closer to a
+slowly changing constant than to the textbook volatility-clustering model.</p></div>
 
 <div class="box flag"><span class="k">The models do not all see the same information</span>
-<p>Every predictor built in stage 3 is lagged to day $t-1$: the HAR columns use
-<code>.shift(1)</code>, and options and VIX are moved forward a business day. So
-on row $t$, HAR-RV, Ridge, Lasso and XGBoost forecast $RV_{t+1}$ knowing nothing
-after day $t-1$ &mdash; effectively a two-day-ahead forecast wearing a one-day
-label.</p>
-<p>GARCH is different. Its <code>predict</code> loop consumes
-<code>daily_returns</code> on row $t$ itself, so it forecasts $RV_{t+1}$ knowing
-the day-$t$ return. That is not look-ahead &mdash; the day-$t$ return is known at
-the day-$t$ close, before $RV_{t+1}$ happens &mdash; but it is one extra day of
-information that the other four do not get. The comparison is therefore tilted
-slightly in GARCH's favour. Levelling it would mean either lagging GARCH's return
-input or un-lagging the realised variance columns; both change the benchmark's
-numbers, so this is documented rather than altered.</p></div>
+<p>Every stage-3 predictor is lagged to day $t-1$: HAR columns use
+<code>.shift(1)</code>, while options and VIX move forward one business day. On
+row $t$, HAR-RV, Ridge, Lasso, and XGBoost forecast $RV_{t+1}$ without information
+after day $t-1$&mdash;effectively a two-day-ahead forecast with a one-day label.</p>
+<p>GARCH is different. Its <code>predict</code> loop uses
+<code>daily_returns</code> from row $t$, so it forecasts $RV_{t+1}$ knowing the
+day-$t$ return. That is not look-ahead: the day-$t$ return is known at the day-$t$
+close, before
+$RV_{t+1}$ occurs. It is, however, one extra day of information that the other
+four models do not receive, which gives GARCH a small advantage. Removing that
+advantage would change the benchmark numbers, so the code documents it.</p></div>
 
 <div class="box flag"><span class="k">The bandwidth rule can be too small for the five-day test</span>
-<p>Five-day targets overlap: consecutive rows share four of their five days, so
-loss differences are autocorrelated out to lag 4 by construction. A
-Diebold-Mariano test needs at least $H-1=4$ lags to account for that. The code
-uses $K=\lfloor n^{1/3}\rfloor$, which at $n=286$ gives 6 &mdash; comfortably
-enough. But the rule does not know the horizon: at $n=30$, the minimum this code
-will test, it gives $K=3$, which is too few, and the resulting p-values would be
-too small. Safe at the shipped configuration, fragile at a shorter one.</p></div>
+<p>Five-day targets overlap: consecutive rows share four days, so loss
+differences are autocorrelated through lag 4. A Diebold-Mariano test needs at
+least $H-1=4$ lags for that overlap. The code uses $K=\lfloor n^{1/3}\rfloor$;
+at $n=286$, this gives 6. At $n=30$, the minimum tested here, it gives $K=3$,
+which is too few and would make p-values too small. The shipped configuration is
+safe; shorter samples are not.</p></div>
 
 <div class="box flag"><span class="k">One asset, 286 days, and no transaction costs</span>
-<p>The whole benchmark rests on SPY over roughly fourteen months of
-out-of-sample dates, spanning one volatility regime. The
-<code>robustness_symbols</code> setting exists but ships empty. Nothing here is
-evidence that a ranking holds for another asset, another period, or a stress
-episode. The Diebold-Mariano table already says most pairs are
-indistinguishable at this sample size.</p></div>
+<p>The benchmark uses SPY over roughly fourteen out-of-sample months and one
+volatility regime. <code>robustness_symbols</code> exists but is empty. The
+ranking may not hold for another asset, period, or stress episode. The
+Diebold-Mariano table already finds most pairs indistinguishable at this sample
+size.</p></div>
 
 <div class="box why"><span class="k">One worry that measured smaller than expected</span>
-<p>The target is built from intraday minute returns and so omits the overnight
-price jump, while GARCH is fitted on close-to-close daily returns that include
-it. In principle GARCH would then be forecasting a larger quantity than the one
-being scored. Measured on this data, the gap is small: the mean of
-<code>rv_cc</code> is 8.556844e-05 and the variance of the daily log returns is
-8.518606e-05, a ratio of 0.9955. The reason is that these minute bars run 04:00
-to 19:59, capturing sixteen hours of the day, so very little movement is left
-outside the window. Worth re-checking if the data source is ever changed to
+<p>The target uses intraday minute returns and omits the overnight price jump;
+GARCH uses close-to-close daily returns and includes it. In principle, GARCH
+therefore forecasts a larger quantity than the scored target. Here the gap is
+small: mean <code>rv_cc</code> is 8.556844e-05, while daily-return variance is
+8.518606e-05, a ratio of 0.9955. The minute bars cover 04:00 to 19:59, so little
+movement remains outside the window. Recheck this if the source changes to
 regular trading hours only.</p></div>
 
 <h2 id="fixes"><span class="sec-no">14</span>Fixes applied</h2>
 
-<p>Three changes to <code>src/volcast/evaluation/train_evaluate.py</code>. No
-other source file was modified. The full test suite, 56 tests, passes before and
-after.</p>
+<p>Three changes were made to
+<code>src/volcast/evaluation/train_evaluate.py</code>. No other source file was
+modified. The full suite of 56 tests passes before and after.</p>
 
 <h3>1. Purge overlapping targets from the training window</h3>
 
 <div class="box def"><span class="k">The bug</span>
-<p>For the five-day horizon, the training window ran right up to the first
-forecast date. The last four training rows carried targets averaging realised
-variance over days that fall <i>inside</i> the block being forecast. Those labels
-were not knowable at the forecast origin, so the fitted parameters had seen the
-future. This is genuine look-ahead bias, and it affected only horizon 5.</p></div>
+<p>At horizon 5, the training window reached the first forecast date. The last
+four training rows contained targets that averaged realised variance from days
+<i>inside</i> the forecast block. Those labels were not available at the forecast
+origin, so the fit used future information. This look-ahead bias affected only
+horizon 5.</p></div>
 
 <pre><span class="c"># before</span>
 train_df = working_df.iloc[:retrain_idx]
@@ -1209,27 +1158,24 @@ train_df = working_df.iloc[:retrain_idx]
 purged_train_rows = horizon - 1
 train_df = working_df.iloc[: retrain_idx - purged_train_rows]</pre>
 
-<p>The minimum training size was raised to
-<code>MIN_TRAIN_OBS + purged_train_rows</code> so that 25 rows still reach the
-model after the purge, and so the slice index cannot go negative. Horizon 1 is
-unaffected, since $H-1=0$.</p>
+<p>The minimum boundary was raised to
+<code>MIN_TRAIN_OBS + purged_train_rows</code> so 25 rows still reach the model
+after the purge and the slice index cannot go negative. Horizon 1 is unchanged
+because $H-1=0$.</p>
 
 <h3>2. Advance the GARCH variance state up to the forecast date</h3>
 
 <div class="box def"><span class="k">The bug</span>
-<p><code>GARCHModel.predict</code> seeds its recursion with the last fitted
-conditional variance. Its own loop invariant needs that seed to be $h_t$ for the
-<i>first row it is given</i>. What it received was $h_T$, the conditional
-variance of the last <i>training</i> row. Those are one row apart for horizon 1,
-and after fix 1, five rows apart for horizon 5. Every retrain block therefore
-started from a stale variance state.</p>
-<p>The alignment was confirmed by experiment rather than assumed. Fitting a
-simulated GARCH series and reconstructing the last conditional variance two
-ways: $\omega+\alpha r_{T-1}^{2}+\beta h_{T-1}$ reproduces
-<code>conditional_volatility[-1]</code> to sixteen digits, while
-$\omega+\alpha r_{T}^{2}+\beta h_{T-1}$ does not. So the library's
-$h_t$ is indexed to the return on day $t$, and the code needed one more update
-step.</p></div>
+<p><code>GARCHModel.predict</code> starts its recursion with the last fitted
+conditional variance. The loop needs $h_t$ for the <i>first row it receives</i>,
+but it received $h_T$, the variance of the last <i>training</i> row. These are
+one row apart at horizon 1 and, after fix 1, five rows apart at horizon 5. Every
+retrain block started from a stale state.</p>
+<p>A simulated GARCH series confirmed the alignment. The reconstruction
+$\omega+\alpha r_{T-1}^{2}+\beta h_{T-1}$ matches
+<code>conditional_volatility[-1]</code> to sixteen digits; using
+$\omega+\alpha r_{T}^{2}+\beta h_{T-1}$ does not. The library's $h_t$ is indexed
+to day-$t$ return, so the code needed one more update.</p></div>
 
 <pre><span class="c"># before</span>
 return model.predict(test_df[garch_columns]), model.name
@@ -1239,40 +1185,37 @@ return model.predict(test_df[garch_columns]), model.name
 state_predictions = model.predict(garch_state_df[garch_columns])
 return state_predictions[-len(test_df) :], model.name</pre>
 
-<p>The warm-up frame is built by the caller, which is the only place that knows
-the row indices:</p>
+<p>The caller builds the warm-up frame because it knows the row indices:</p>
 
 <pre>last_train_idx = retrain_idx - purged_train_rows - 1
 garch_state_df = working_df.iloc[last_train_idx:test_end]</pre>
 
-<p>Only GARCH's numbers moved: horizon 1 QLIKE went from $-8.761820$ to
-$-8.762988$, horizon 5 from $-8.753833$ to $-8.752250$. Small, as expected for a
-one-step state correction that decays at $\beta=0.97$ &mdash; but it is now
-correct rather than approximately correct.</p>
+<p>Only GARCH's numbers changed: horizon 1 QLIKE went from $-8.761820$ to
+$-8.762988$; horizon 5 went from $-8.753833$ to $-8.752250$. The change is
+small because the one-step correction decays at $\beta=0.97$, but the state is
+now aligned.</p>
 
 <h3>3. Read the Diebold-Mariano model list off the pivot table</h3>
 
 <div class="box def"><span class="k">The bug</span>
-<p><code>compute_dm_tests</code> took its model list from the raw forecast table,
-then looked each name up in a pivot table. If a model failed at every retrain
-point, its forecasts are all <code>NaN</code>,
-<code>pivot_table</code> drops the column, and the lookup raised
-<code>KeyError</code> &mdash; killing stage 4 after the forecasts had been
-computed but before anything was written. A latent crash, reachable whenever one
-model breaks, which the <code>except Exception</code> handler makes easy.</p></div>
+<p><code>compute_dm_tests</code> took model names from the raw forecast table and
+looked them up in a pivot table. If a model failed at every retrain point, its
+forecasts were all <code>NaN</code>, <code>pivot_table</code> dropped the column,
+and the lookup raised <code>KeyError</code>. Stage 4 then stopped after computing
+forecasts but before writing output. The <code>except Exception</code> handler
+makes this failure reachable whenever a model breaks.</p></div>
 
 <pre><span class="c"># after: the pivot is the authority on which models actually have forecasts</span>
 models = sorted(pivot["y_pred"].columns)</pre>
 
 <div class="box why"><span class="k">What was deliberately left alone</span>
-<p>Nine files in this repository carry uncommitted formatting-only changes from
-an automated <code>ruff format</code> pass &mdash; quote style, line wrapping,
-import ordering, and two redundant <code>int()</code> calls around
-<code>len()</code>. Each hunk was inspected. None removes an import that is still
-in use, and the test suite passes, so none of them were committed. The
-limitations in section 13 were documented rather than changed, because each one
-would alter the benchmark's reported ranking, which is a research decision rather
-than a bug fix.</p></div>
+<p>Nine files have uncommitted formatting-only changes from
+<code>ruff format</code>: quote style, line wrapping, import order, and two
+redundant <code>int()</code> calls around <code>len()</code>. Each change was
+inspected; no needed import was removed, and the tests pass, so none was
+committed. The limitations in section 13 were documented rather than changed
+because each would alter the reported ranking. That is a research decision, not
+a bug fix.</p></div>
 
 <h2 id="questions"><span class="sec-no">15</span>If they point at a line</h2>
 
@@ -1280,16 +1223,16 @@ than a bug fix.</p></div>
 <table>
 <thead><tr><th>Question</th><th>Answer</th></tr></thead>
 <tbody>
-<tr><td>Where exactly is look-ahead prevented?</td><td>Four places. <code>.shift(1)</code> before every rolling average in <code>add_har_lags</code>; <code>BDay(1)</code> on options and VIX in stage 3; the expanding slice <code>iloc[:retrain_idx - purged]</code> in stage 4; and the $H-1$ purge itself.</td></tr>
-<tr><td>Is any model fitted on the full sample?</td><td>No. Every fit happens inside the retrain loop on a slice that ends before the forecast block. There is no call to <code>fit</code> outside that loop.</td></tr>
-<tr><td>Is the annualisation factor the same for all models?</td><td>The question does not arise at scoring time: QLIKE and MSE both operate on raw daily variance, so no annualisation is applied to any model. The constant 252 appears twice, in <code>build_features.py</code> for the IV-RV spread and in <code>blog/generate_charts.py</code> for display, and both are 252.0.</td></tr>
-<tr><td>Why is QLIKE negative?</td><td>The code drops the constant $-\log y_t - 1$ terms that would make the textbook version bottom out at zero. They do not depend on the forecast, so rankings are unaffected, but the absolute values are only meaningful within this project.</td></tr>
-<tr><td>Why does Lasso win QLIKE but lose MSE?</td><td>It fits in log space and exponentiates back, which yields something close to the median rather than the mean of a right-skewed variance. QLIKE rewards the typical day; MSE is dominated by the violent days that a median-like forecast misses.</td></tr>
-<tr><td>What happens if I set <code>initial_train_years = 5</code>?</td><td>Stage 4 raises <code>InsufficientTrainingHistoryError</code> naming the 537 rows, the span 2022-11-02 to 2024-12-20, and the cutoff 2027-11-02 it would have needed. It does not write empty score files. This is covered by a test.</td></tr>
-<tr><td>How long does a full run take?</td><td>About 11 seconds end to end: 0.5 s for stage 2, 5.0 s for stage 3, 5.4 s for stage 4, on the checked-in two-year sample.</td></tr>
-<tr><td>Why 286 forecast dates and not 537?</td><td>The first 251 rows are the one-year initial training window. 537 minus 251 is 286.</td></tr>
-<tr><td>Can I trust the model ranking?</td><td>Only partly. Seven of the ten pairwise tests at horizon 1 have $p&gt;0.05$, and the three that pass are all against XGBoost, which is a constant. See section 13.</td></tr>
-<tr><td>Why does the five-day model train on fewer rows than the one-day model?</td><td>The purge. Four rows are removed from the end of each five-day training window so no training label overlaps the forecast block.</td></tr>
+<tr><td>Where exactly is look-ahead prevented?</td><td>In four places: <code>.shift(1)</code> before each rolling average in <code>add_har_lags</code>; <code>BDay(1)</code> for options and VIX in stage 3; the slice <code>iloc[:retrain_idx - purged]</code> in stage 4; and the $H-1$ purge.</td></tr>
+<tr><td>Is any model fitted on the full sample?</td><td>No. Every fit is inside the retrain loop on data ending before the forecast block. No <code>fit</code> call exists outside it.</td></tr>
+<tr><td>Is the annualisation factor the same for all models?</td><td>Scoring uses raw daily variance, so neither QLIKE nor MSE annualises forecasts. The constant 252 appears in <code>build_features.py</code> for the IV-RV spread and in <code>blog/generate_charts.py</code> for display; both use 252.0.</td></tr>
+<tr><td>Why is QLIKE negative?</td><td>The code omits $-\log y_t - 1$, which would make textbook QLIKE bottom out at zero. The terms do not affect rankings, but the absolute values are meaningful only within this project.</td></tr>
+<tr><td>Why does Lasso win QLIKE but lose MSE?</td><td>Its log-space fit gives roughly a median rather than a mean for right-skewed variance. QLIKE rewards the typical day; MSE is driven by the turbulent days a median-like forecast misses.</td></tr>
+<tr><td>What happens if I set <code>initial_train_years = 5</code>?</td><td>Stage 4 raises <code>InsufficientTrainingHistoryError</code> with the 537 rows, the span 2022-11-02 to 2024-12-20, and the required cutoff 2027-11-02. It does not write empty score files. A test covers this.</td></tr>
+<tr><td>How long does a full run take?</td><td>About 11 seconds: 0.5 s for stage 2, 5.0 s for stage 3, and 5.4 s for stage 4 on the checked-in two-year sample.</td></tr>
+<tr><td>Why 286 forecast dates and not 537?</td><td>The first 251 rows form the one-year training window. 537 minus 251 is 286.</td></tr>
+<tr><td>Can I trust the model ranking?</td><td>Only partly. Seven of ten horizon-1 pairwise tests have $p&gt;0.05$. The three that pass are all against XGBoost, which is constant. See section 13.</td></tr>
+<tr><td>Why does the five-day model train on fewer rows than the one-day model?</td><td>The purge removes four rows from each five-day training window so no training label overlaps the forecast block.</td></tr>
 </tbody>
 </table>
 </div>
@@ -1300,26 +1243,26 @@ than a bug fix.</p></div>
 <table>
 <thead><tr><th>Check</th><th>How it works</th><th>What it catches</th></tr></thead>
 <tbody>
-<tr><td><code>test_har_daily_lag_matches_previous_day_rv</code></td><td>Recomputes <code>rv_cc.shift(1)</code> from stage-2 output and compares to <code>rv_cc_d</code> in the feature table, requiring agreement to $10^{-10}$</td><td>A shift dropped or applied in the wrong order &mdash; the leakage bug that would matter most</td></tr>
-<tr><td><code>test_one_day_target_matches_next_day_rv</code></td><td>Same idea with <code>shift(-1)</code> against <code>rv_1d_ahead</code></td><td>An off-by-one in the target that would make every model look better or worse than it is</td></tr>
-<tr><td><code>test_feature_columns_have_no_missing_values</code></td><td>Counts <code>NaN</code> in all fourteen predictors</td><td>A join or forward-fill that quietly left holes for a model to trip over</td></tr>
-<tr><td><code>test_walk_forward_rejects_infeasible_initial_window</code></td><td>Asks for a five-year window on two years of data and matches the error text</td><td>Silently writing an empty scoreboard instead of failing</td></tr>
-<tr><td><code>test_stage_2_to_4_pipeline_smoke_writes_outputs</code></td><td>Builds 55 synthetic trading days in a temporary folder and runs stages 2 through 4 end to end</td><td>Import errors, path breakage, and schema drift between stages</td></tr>
-<tr><td><code>test_compute_model_diagnostics_counts_floor_hits</code></td><td>Feeds a forecast at exactly $10^{-10}$ and checks the floor counter</td><td>A drifting floor constant that would stop reporting clipped forecasts</td></tr>
-<tr><td>Stage 1 sidecar validation</td><td>Compares schema, row count, date bounds and requested range against the JSON beside each parquet</td><td>Benchmarking a stale or partially refreshed cache</td></tr>
-<tr><td>Hand arithmetic in this page</td><td>Each sample box recomputes one row independently, including <code>rv_cc_w</code>, <code>rv_5d_ahead</code>, <code>iv_rv_spread</code>, <code>atm_iv</code>, and QLIKE</td><td>A description on this page drifting away from what the code does</td></tr>
+<tr><td><code>test_har_daily_lag_matches_previous_day_rv</code></td><td>Recomputes <code>rv_cc.shift(1)</code> from stage-2 output and compares it with <code>rv_cc_d</code> to $10^{-10}$</td><td>A missing or misordered shift, the main leakage risk</td></tr>
+<tr><td><code>test_one_day_target_matches_next_day_rv</code></td><td>Checks <code>shift(-1)</code> against <code>rv_1d_ahead</code></td><td>An off-by-one target that would distort every model's result</td></tr>
+<tr><td><code>test_feature_columns_have_no_missing_values</code></td><td>Counts <code>NaN</code> in all fourteen predictors</td><td>Joins or forward fills that leave missing inputs</td></tr>
+<tr><td><code>test_walk_forward_rejects_infeasible_initial_window</code></td><td>Requests a five-year window on two years of data and checks the error text</td><td>An empty scoreboard written instead of an error</td></tr>
+<tr><td><code>test_stage_2_to_4_pipeline_smoke_writes_outputs</code></td><td>Builds 55 synthetic trading days in a temporary folder and runs stages 2 through 4</td><td>Import errors, broken paths, or schema changes between stages</td></tr>
+<tr><td><code>test_compute_model_diagnostics_counts_floor_hits</code></td><td>Feeds a forecast at $10^{-10}$ and checks the floor counter</td><td>A changed floor constant that stops clipped forecasts being reported</td></tr>
+<tr><td>Stage 1 sidecar validation</td><td>Compares schema, row count, date bounds, and requested range with the JSON beside each Parquet file</td><td>A stale or partly refreshed cache</td></tr>
+<tr><td>Hand arithmetic in this page</td><td>Each sample box independently recomputes one row, including <code>rv_cc_w</code>, <code>rv_5d_ahead</code>, <code>iv_rv_spread</code>, <code>atm_iv</code>, and QLIKE</td><td>This page drifting away from the code</td></tr>
 </tbody>
 </table>
 </div>
 
-<p class="fnote">Suite status at the time of writing: 56 passed. Run it with
+<p class="fnote">Suite status: 56 passed. Run it with
 <code>uv run --extra dev pytest -q</code>.</p>
 
 <p class="foot">Companion documents: <code>README.md</code> for the project
 story, <code>GUIDE_OVERVIEW.md</code> for the folder map,
-<code>docs/reference/evaluation_protocol.md</code> for the formal target and
-scoring definitions, and <code>notebooks/offline_pipeline_demo.ipynb</code> for a
-runnable walkthrough.</p>
+<code>docs/reference/evaluation_protocol.md</code> for formal target and scoring
+definitions, and <code>notebooks/offline_pipeline_demo.ipynb</code> for a runnable
+walkthrough.</p>
 
 </div>
 </body>
