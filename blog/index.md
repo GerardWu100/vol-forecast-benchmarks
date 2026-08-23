@@ -6,11 +6,11 @@ image: images/cover.png
 categories: ["Quantitative Research", "Risk Management"]
 ---
 
-The first version of this benchmark completed successfully and produced no forecasts. Its feature matrix ended in December 2024, while the configuration reserved five calendar years for initial training from November 2022. The first possible test date would have fallen in November 2027.
+The first version of this benchmark exited successfully and produced no forecasts. Its feature matrix ended in December 2024, while the configuration reserved five calendar years for initial training from November 2022. The first possible test date would have fallen in November 2027.
 
-An empty score table was mathematically consistent and operationally misleading. A pipeline that writes files, logs “complete,” and exits with code zero looks healthy even when the research question was never tested.
+The empty score table was mathematically consistent and useless. A pipeline that writes files, logs "complete," and exits with code zero looks healthy even when it never tests the research question.
 
-I fixed the contract in two places. The portable default now uses one calendar year of initial training, which fits the checked-in data and leaves 286 out-of-sample dates. A longer window is still allowed, but stage 4 raises a dated `InsufficientTrainingHistoryError` when the data cannot support it. The result is an executable benchmark whose limitations are visible before any model ranking appears.
+I changed the contract in two places. The portable default now uses one calendar year of initial training. That fits the checked-in data and leaves 286 out-of-sample dates. A longer window is still allowed, but stage 4 raises a dated `InsufficientTrainingHistoryError` when the data cannot support it. The benchmark now fails before ranking models when the experiment is impossible.
 
 ## The object being forecast
 
@@ -68,7 +68,7 @@ After all required features and targets are present, the pipeline has 537 rows f
 
 ## Five ways to forecast variance
 
-### HAR-RV: persistence at three scales
+### HAR-RV persistence at three scales
 
 The HAR-RV model introduced by [Corsi](https://doi.org/10.1093/jjfinec/nbp001) compresses persistence into daily, weekly, and monthly averages. Define
 
@@ -95,7 +95,7 @@ $$
 
 where $\widehat y_{t,h}$ is forecast variance and $\beta_0$, $\beta_d$, $\beta_w$, and $\beta_m$ are fitted coefficients. Negative predictions are clipped to a small positive floor because QLIKE requires positive forecasts.
 
-### GARCH(1,1): conditional variance from returns
+### GARCH(1,1) conditional variance from returns
 
 Generalized Autoregressive Conditional Heteroskedasticity with one shock lag and one variance lag, abbreviated GARCH(1,1), follows [Bollerslev](https://doi.org/10.1016/0304-4076(86)90063-1). The zero-mean return model is
 
@@ -126,7 +126,7 @@ for _ in range(1, self._forecast_horizon):
 
 This horizon-aware recursion matters. Reusing a one-day conditional variance for the five-day average target answers a different question.
 
-### Ridge and Lasso: regularisation in log-variance space
+### Ridge and Lasso in log-variance space
 
 Let $\mathbf{x}_t\in\mathbb{R}^{14}$ be the standardised feature vector and let $z_{t,h}=\log(y_{t,h})$ be the log-variance target. Ridge estimates coefficient vector $\boldsymbol\theta$ by solving
 
@@ -159,7 +159,7 @@ return np.maximum(positive_predictions, MIN_POSITIVE_VARIANCE)
 
 Log-space fitting changes the regression target and therefore the error geometry. It is not merely a numerical trick.
 
-### XGBoost: nonlinear interactions
+### XGBoost and nonlinear interactions
 
 XGBoost fits an additive ensemble of regression trees, following [Chen and Guestrin](https://doi.org/10.1145/2939672.2939785). With tree functions $f_m$ and learning rate $\eta$, its prediction after $M$ trees has the form
 
@@ -238,7 +238,7 @@ The unchanged portable command now produces the following scores:
 
 ![QLIKE differences from HAR-RV under the portable default](images/02_qlike_vs_har.png)
 
-Lasso has the lowest QLIKE at both horizons, with Ridge close behind. HAR-RV has the lowest MSE at both horizons. At one day, Lasso's MSE is more than twice HAR-RV's even though Lasso wins QLIKE. “Best model” is therefore incomplete unless the loss function is named.
+Lasso has the lowest QLIKE at both horizons, with Ridge close behind. HAR-RV has the lowest MSE at both horizons. At one day, Lasso's MSE is more than twice HAR-RV's even though Lasso wins QLIKE. There is no "best model" until the loss function is named.
 
 ![Realised one-day volatility beside HAR-RV and Lasso forecasts](images/03_forecast_paths.png)
 
@@ -266,7 +266,7 @@ The repaired default answers the question it claims to answer, but four limitati
 
 First, a one-year burn-in is short for a model expected to span several volatility regimes. Extending the raw history is preferable to tuning the window on these results. Second, SPY and VIX do not establish cross-asset generality. Third, the option features are lagged safely, but stale quotes, sparse expiries, and three-day forward-fills may still alter their economic meaning. Fourth, the information set is not identical across model families because GARCH uses the current daily return while the other market-state variables are lagged.
 
-The strongest result is methodological. A forecast benchmark needs three clocks to agree: the target horizon, the feature-availability time, and the training cutoff. Once those clocks are explicit, the score disagreement becomes informative rather than confusing. Lasso is better under QLIKE, HAR-RV is better under MSE, and neither statement travels beyond this sample without more data.
+The result I would carry forward is methodological. A forecast benchmark has to align the target horizon, feature-availability time, and training cutoff. Once those times are explicit, the score disagreement has a clear meaning. Lasso is better under QLIKE. HAR-RV is better under MSE. Neither result extends beyond this sample without more data.
 
 ## Primary references
 

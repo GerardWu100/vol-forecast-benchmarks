@@ -6,11 +6,11 @@ image: images/cover.png
 categories: ["Quantitative Research", "Risk Management"]
 ---
 
-La première version de ce benchmark se terminait sans erreur, mais ne produisait aucune prévision. La matrice de variables s'arrêtait en décembre 2024, alors que la configuration réservait cinq années civiles à l'apprentissage initial à partir de novembre 2022. La première date de test possible se serait donc située en novembre 2027.
+La première version de ce benchmark se terminait sans erreur et ne produisait aucune prévision. La matrice de variables s'arrêtait en décembre 2024, alors que la configuration réservait cinq années civiles à l'apprentissage initial à partir de novembre 2022. La première date de test possible se serait donc située en novembre 2027.
 
-Une table de scores vide était cohérente sur le plan mathématique, mais trompeuse sur le plan opérationnel. Lorsqu'un pipeline écrit des fichiers, affiche « complete » dans ses logs et renvoie le code de sortie zéro, il paraît sain, même si la question de recherche n'a jamais été testée.
+La table de scores vide était cohérente sur le plan mathématique et inutile. Lorsqu'un pipeline écrit des fichiers, affiche "complete" dans ses logs et renvoie le code de sortie zéro, il paraît sain, même s'il ne teste jamais la question de recherche.
 
-J'ai corrigé ce contrat à deux endroits. La configuration portable utilise désormais une année civile d'apprentissage initial, compatible avec les données fournies et laissant 286 dates hors échantillon. Une fenêtre plus longue reste permise, mais l'étape 4 lève une exception `InsufficientTrainingHistoryError` accompagnée des dates lorsque l'historique est insuffisant. On obtient ainsi un benchmark exécutable dont les limites apparaissent avant le moindre classement.
+J'ai modifié ce contrat à deux endroits. La configuration portable utilise désormais une année civile d'apprentissage initial. Cette durée est compatible avec les données fournies et laisse 286 dates hors échantillon. Une fenêtre plus longue reste permise, mais l'étape 4 lève une exception `InsufficientTrainingHistoryError` accompagnée des dates lorsque l'historique est insuffisant. Le benchmark s'arrête maintenant avant de classer les modèles lorsque l'expérience est impossible.
 
 ## Ce que l'on cherche à prévoir
 
@@ -68,7 +68,7 @@ Après filtrage des lignes incomplètes, le pipeline conserve 537 lignes du 2022
 
 ## Cinq façons de prévoir la variance
 
-### HAR-RV : la persistance à trois échelles
+### La persistance de HAR-RV à trois échelles
 
 Le modèle HAR-RV proposé par [Corsi](https://doi.org/10.1093/jjfinec/nbp001) résume la persistance au moyen de moyennes quotidienne, hebdomadaire et mensuelle. Définissons
 
@@ -95,7 +95,7 @@ $$
 
 où $\widehat y_{t,h}$ est la variance prévue, tandis que $\beta_0$, $\beta_d$, $\beta_w$ et $\beta_m$ sont les coefficients estimés. Les prévisions négatives sont ramenées à un petit plancher positif, car QLIKE exige des valeurs strictement positives.
 
-### GARCH(1,1) : la variance conditionnelle tirée des rendements
+### La variance conditionnelle de GARCH(1,1)
 
 Le modèle Generalized Autoregressive Conditional Heteroskedasticity avec un retard de choc et un retard de variance, abrégé GARCH(1,1), suit [Bollerslev](https://doi.org/10.1016/0304-4076(86)90063-1). Le modèle de rendement de moyenne nulle est
 
@@ -126,7 +126,7 @@ for _ in range(1, self._forecast_horizon):
 
 Cette récursion dépendante de l'horizon est nécessaire. Réutiliser une variance conditionnelle à un jour pour la cible moyenne à cinq jours reviendrait à répondre à une autre question.
 
-### Ridge et Lasso : régulariser dans l'espace de la log-variance
+### Ridge et Lasso dans l'espace de la log-variance
 
 Soit $\mathbf{x}_t\in\mathbb{R}^{14}$ le vecteur de variables standardisées et $z_{t,h}=\log(y_{t,h})$ la cible en log-variance. Ridge estime le vecteur de coefficients $\boldsymbol\theta$ en résolvant
 
@@ -159,7 +159,7 @@ return np.maximum(positive_predictions, MIN_POSITIVE_VARIANCE)
 
 L'ajustement en espace logarithmique change la cible de la régression et donc la géométrie des erreurs. Ce n'est pas un simple artifice numérique.
 
-### XGBoost : des interactions non linéaires
+### Les interactions non linéaires de XGBoost
 
 XGBoost ajuste un ensemble additif d'arbres de régression, suivant [Chen et Guestrin](https://doi.org/10.1145/2939672.2939785). Avec les fonctions d'arbre $f_m$ et le taux d'apprentissage $\eta$, la prévision après $M$ arbres s'écrit
 
@@ -238,7 +238,7 @@ La commande portable, exécutée sans modification, produit maintenant les score
 
 ![Écarts de QLIKE par rapport à HAR-RV pour la configuration portable](images/02_qlike_vs_har.png)
 
-Lasso obtient le QLIKE le plus faible aux deux horizons, suivi de près par Ridge. HAR-RV affiche la plus faible MSE dans les deux cas. À un jour, la MSE de Lasso dépasse même le double de celle de HAR-RV, malgré sa victoire selon QLIKE. Parler du « meilleur modèle » sans nommer la fonction de perte est donc incomplet.
+Lasso obtient le QLIKE le plus faible aux deux horizons, suivi de près par Ridge. HAR-RV affiche la plus faible MSE dans les deux cas. À un jour, la MSE de Lasso dépasse même le double de celle de HAR-RV, malgré sa victoire selon QLIKE. Il n'existe pas de "meilleur modèle" tant que la fonction de perte n'est pas précisée.
 
 ![Volatilité réalisée à un jour et prévisions de HAR-RV et Lasso](images/03_forecast_paths.png)
 
@@ -266,7 +266,7 @@ La configuration corrigée répond désormais à la question annoncée, mais qua
 
 D'abord, une année d'apprentissage est courte pour un modèle censé traverser plusieurs régimes de volatilité. Il vaut mieux allonger l'historique brut que régler la fenêtre à partir de ces résultats. Ensuite, SPY et VIX ne permettent aucune conclusion générale entre actifs. Les variables d'options sont retardées correctement, mais des cotations anciennes, des échéances rares et la propagation sur trois jours peuvent encore modifier leur sens économique. Enfin, l'ensemble d'information n'est pas identique entre les familles, car GARCH emploie le rendement quotidien courant alors que les autres variables d'état du marché sont retardées.
 
-Le résultat le plus solide concerne la méthode. Trois horloges doivent concorder dans un benchmark de prévision : l'horizon de la cible, la disponibilité des variables et la coupure de l'échantillon d'apprentissage. Une fois ces horloges explicites, le désaccord entre scores devient instructif. Lasso est meilleur selon QLIKE, HAR-RV selon la MSE, et aucune de ces conclusions ne dépasse cet échantillon sans données supplémentaires.
+Le résultat que je conserverais concerne la méthode. Un benchmark de prévision doit aligner l'horizon de la cible, la disponibilité des variables et la coupure de l'échantillon d'apprentissage. Une fois ces temps explicites, le désaccord entre scores prend un sens clair. Lasso est meilleur selon QLIKE. HAR-RV est meilleur selon la MSE. Aucun de ces résultats ne dépasse cet échantillon sans données supplémentaires.
 
 ## Références primaires
 
