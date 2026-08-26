@@ -95,7 +95,3 @@ docs/reference/    data dictionary, evaluation protocol, offline workflow, raw c
 - `outputs/scores.parquet`: aggregate QLIKE and MSE by symbol, horizon, and model.
 - `outputs/dm_tests.parquet`: pairwise Diebold-Mariano test results.
 - `outputs/model_diagnostics.parquet`: floor-hit rates and tail-loss behavior per model.
-
-## License
-
-All rights reserved. See [LICENSE](LICENSE).
