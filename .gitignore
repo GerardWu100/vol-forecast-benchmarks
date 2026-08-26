@@ -50,3 +50,14 @@ secrets.toml
 *.secret
 .netrc
 *.log
+
+# macOS Finder files
+.DS_Store
+._*
+__MACOSX/
+
+# Obsidian vault state. Markdown notes stay tracked.
+.obsidian/
+.obsidian-*/
+.obsidian.vimrc
+.trash/
